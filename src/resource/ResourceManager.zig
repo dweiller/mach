@@ -12,7 +12,9 @@ cwd: std.fs.Dir,
 context: ?*anyopaque = null,
 
 pub fn init(allocator: std.mem.Allocator, paths: []const []const u8, resource_types: []const ResourceType) !ResourceManager {
-    var cwd = try std.fs.openDirAbsolute(try std.fs.selfExeDirPathAlloc(allocator), .{});
+    const path = try std.fs.selfExeDirPathAlloc(allocator);
+    defer allocator.free(path);
+    var cwd = try std.fs.openDirAbsolute(path, .{});
     errdefer cwd.close();
 
     var resource_map: std.StringArrayHashMapUnmanaged(ResourceType) = .{};
@@ -45,6 +47,7 @@ pub fn getResource(self: *ResourceManager, uri: []const u8) !Resource {
         return res;
 
     var file: ?std.fs.File = null;
+    defer if (file) |f| f.close();
     const uri_data = try uri_parser.parseUri(uri);
 
     for (self.paths) |path| {
@@ -55,7 +58,7 @@ pub fn getResource(self: *ResourceManager, uri: []const u8) !Resource {
             error.FileNotFound => continue,
             else => return err,
         };
-        errdefer file.deinit();
+        break;
     }
 
     if (file) |f| {
@@ -87,6 +90,29 @@ pub fn unloadResource(self: *ResourceManager, res: Resource) void {
     }
 
     _ = self.resources.remove(res.uri);
+    self.allocator.free(res.uri);
+}
+
+pub fn deinit(self: *ResourceManager) ?*anyopaque {
+    var removal_stack = std.BoundedArray(Resource, 64){};
+    var again = true;
+    while (again) {
+        again = false;
+        var iter = self.resources.valueIterator();
+        while (iter.next()) |res_ptr| {
+            removal_stack.append(res_ptr.*) catch {
+                again = true;
+                break;
+            };
+        }
+        while (removal_stack.popOrNull()) |res| {
+            self.unloadResource(res);
+        }
+    }
+    self.resources.deinit(self.allocator);
+    self.resource_map.deinit(self.allocator);
+    self.cwd.close();
+    return self.context;
 }
 
 pub const Resource = struct {
