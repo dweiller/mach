@@ -42,6 +42,13 @@ pub fn setLoadContext(self: *ResourceManager, ctx: anytype) void {
     self.context = context;
 }
 
+pub fn removeLoadContext(self: *ResourceManager, comptime T: type) void {
+    if (self.context) |ctx| {
+        const casted_ptr = @ptrCast(*T, @alignCast(@alignOf(T), ctx));
+        self.allocator.destroy(casted_ptr);
+    }
+}
+
 pub fn getResource(self: *ResourceManager, uri: []const u8) !Resource {
     if (self.resources.get(uri)) |res|
         return res;
