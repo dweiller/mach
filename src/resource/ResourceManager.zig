@@ -73,8 +73,8 @@ pub fn getResource(self: *ResourceManager, uri: []const u8) !Resource {
             var data = try f.reader().readAllAlloc(self.allocator, std.math.maxInt(usize));
             errdefer self.allocator.free(data);
 
-            const resource = try res_type.load(self.context, data);
-            errdefer res_type.unload(self.context, resource);
+            const resource = try res_type.load(self.allocator, self.context, data);
+            errdefer res_type.unload(self.allocator, self.context, resource);
 
             const res = Resource{
                 .uri = try self.allocator.dupe(u8, uri),
@@ -93,7 +93,7 @@ pub fn getResource(self: *ResourceManager, uri: []const u8) !Resource {
 pub fn unloadResource(self: *ResourceManager, res: Resource) void {
     const uri_data = uri_parser.parseUri(res.uri) catch unreachable;
     if (self.resource_map.get(uri_data.scheme)) |res_type| {
-        res_type.unload(self.context, res.resource);
+        res_type.unload(self.allocator, self.context, res.resource);
     }
 
     _ = self.resources.remove(res.uri);
