@@ -7,6 +7,7 @@ allocator: std.mem.Allocator,
 paths: []const []const u8,
 // TODO: Use comptime hash map for resource_types
 resource_map: std.StringArrayHashMapUnmanaged(ResourceType) = .{},
+file_cache: std.BufMap,
 resources: std.StringHashMapUnmanaged(Resource) = .{},
 cwd: std.fs.Dir,
 context: ?*anyopaque = null,
@@ -26,6 +27,8 @@ pub fn init(allocator: std.mem.Allocator, paths: []const []const u8, resource_ty
         .allocator = allocator,
         .paths = paths,
         .resource_map = resource_map,
+        // TODO: Unmanaged version of std.BufMap would be nice
+        .file_cache = std.BufMap.init(allocator),
         .cwd = cwd,
     };
 }
@@ -49,13 +52,42 @@ pub fn removeLoadContext(self: *ResourceManager, comptime T: type) void {
     }
 }
 
+pub fn clearCache(self: *ResourceManager) void {
+    self.file_cache.deinit();
+    self.file_cache = std.BufMap.init(self.allocator);
+}
+
+pub fn unloadCachedFile(self: *ResourceManager, path: []const u8) void {
+    self.file_cache.remove(path);
+}
+
+fn loadFromBytes(self: *ResourceManager, res_type: ResourceType, uri: []const u8, data: []const u8) !Resource {
+    const resource = try res_type.load(self.allocator, self.context, data);
+    errdefer res_type.unload(self.allocator, self.context, resource);
+
+    const res = Resource{
+        .uri = try self.allocator.dupe(u8, uri),
+        .resource = resource,
+    };
+    try self.resources.putNoClobber(self.allocator, res.uri, res);
+    return res;
+}
+
 pub fn getResource(self: *ResourceManager, uri: []const u8) !Resource {
     if (self.resources.get(uri)) |res|
         return res;
 
+    const uri_data = try uri_parser.parseUri(uri);
+
+    if (self.file_cache.get(uri_data.path)) |bytes| {
+        if (self.resource_map.get(uri_data.scheme)) |res_type| {
+            const res = try self.loadFromBytes(res_type, uri, bytes);
+            return res;
+        }
+    }
+
     var file: ?std.fs.File = null;
     defer if (file) |f| f.close();
-    const uri_data = try uri_parser.parseUri(uri);
 
     for (self.paths) |path| {
         var dir = try self.cwd.openDir(path, .{});
@@ -71,17 +103,12 @@ pub fn getResource(self: *ResourceManager, uri: []const u8) !Resource {
     if (file) |f| {
         if (self.resource_map.get(uri_data.scheme)) |res_type| {
             var data = try f.reader().readAllAlloc(self.allocator, std.math.maxInt(usize));
-            errdefer self.allocator.free(data);
+            // file_cache.put() copies the key and data slices, so we need to cleanup `data`;
+            // TODO: altered implementation of std.BufMap for copying key but moving value
+            defer self.allocator.free(data);
 
-            const resource = try res_type.load(self.allocator, self.context, data);
-            errdefer res_type.unload(self.allocator, self.context, resource);
-
-            const res = Resource{
-                .uri = try self.allocator.dupe(u8, uri),
-                .resource = resource,
-                .size = data.len,
-            };
-            try self.resources.putNoClobber(self.allocator, res.uri, res);
+            try self.file_cache.put(uri_data.path, data);
+            const res = try self.loadFromBytes(res_type, uri, data);
             return res;
         }
         return error.UnknownResourceType;
@@ -118,6 +145,7 @@ pub fn deinit(self: *ResourceManager) ?*anyopaque {
     }
     self.resources.deinit(self.allocator);
     self.resource_map.deinit(self.allocator);
+    self.file_cache.deinit();
     self.cwd.close();
     return self.context;
 }
@@ -125,7 +153,6 @@ pub fn deinit(self: *ResourceManager) ?*anyopaque {
 pub const Resource = struct {
     uri: []const u8,
     resource: *anyopaque,
-    size: u64,
 
     // Returns the raw data, which you can use in any ways. Internally it is stored
     // as an *anyopaque
