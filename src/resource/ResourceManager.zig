@@ -71,7 +71,7 @@ pub fn getResource(self: *ResourceManager, uri: []const u8) !Resource {
                 .resource = resource,
                 .size = data.len,
             };
-            try self.resources.putNoClobber(self.allocator, uri, res);
+            try self.resources.putNoClobber(self.allocator, res.uri, res);
             return res;
         }
         return error.UnknownResourceType;
