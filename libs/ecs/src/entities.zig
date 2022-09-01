@@ -223,7 +223,7 @@ pub const ArchetypeStorage = struct {
         }
     }
 
-    pub fn get(storage: *ArchetypeStorage, gpa: Allocator, row_index: u32, name: []const u8, comptime ColumnType: type) ?ColumnType {
+    pub fn get(storage: ArchetypeStorage, gpa: Allocator, row_index: u32, name: []const u8, comptime ColumnType: type) ?ColumnType {
         for (storage.columns) |column| {
             if (!std.mem.eql(u8, column.name, name)) continue;
             if (@sizeOf(ColumnType) == 0) return {};
@@ -249,7 +249,7 @@ pub const ArchetypeStorage = struct {
         return null;
     }
 
-    pub fn getRaw(storage: *ArchetypeStorage, row_index: u32, name: []const u8) []u8 {
+    pub fn getRaw(storage: ArchetypeStorage, row_index: u32, name: []const u8) []u8 {
         for (storage.columns) |column| {
             if (!std.mem.eql(u8, column.name, name)) continue;
             const start = column.offset + (column.size * row_index);
@@ -546,7 +546,7 @@ pub fn Entities(comptime all_components: anytype) type {
         }
 
         /// Returns the archetype storage for the given entity.
-        pub inline fn archetypeByID(entities: *Self, entity: EntityID) *ArchetypeStorage {
+        pub inline fn archetypeByID(entities: Self, entity: EntityID) *ArchetypeStorage {
             const ptr = entities.entities.get(entity).?;
             return &entities.archetypes.values()[ptr.archetype_index];
         }
@@ -665,7 +665,7 @@ pub fn Entities(comptime all_components: anytype) type {
         /// gets the named component of the given type (which must be correct, otherwise undefined
         /// behavior will occur). Returns null if the component does not exist on the entity.
         pub fn getComponent(
-            entities: *Self,
+            entities: Self,
             entity: EntityID,
             comptime namespace_name: std.meta.FieldEnum(@TypeOf(all_components)),
             comptime component_name: std.meta.FieldEnum(@TypeOf(@field(all_components, @tagName(namespace_name)))),
