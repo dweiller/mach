@@ -211,23 +211,40 @@ pub const ArchetypeStorage = struct {
         @panic("no such component");
     }
 
+    fn checkColumn(gpa: Allocator, column: Column, comptime ColumnType: type) void {
+        if (typeId(ColumnType) != column.typeId) {
+            const msg = std.mem.concat(gpa, u8, &.{
+                "unexpected type: ",
+                @typeName(ColumnType),
+                " expected: ",
+                column.name,
+            }) catch |err| @panic(@errorName(err));
+            @panic(msg);
+        }
+    }
+
     pub fn get(storage: *ArchetypeStorage, gpa: Allocator, row_index: u32, name: []const u8, comptime ColumnType: type) ?ColumnType {
         for (storage.columns) |column| {
             if (!std.mem.eql(u8, column.name, name)) continue;
             if (@sizeOf(ColumnType) == 0) return {};
             if (is_debug) {
-                if (typeId(ColumnType) != column.typeId) {
-                    const msg = std.mem.concat(gpa, u8, &.{
-                        "unexpected type: ",
-                        @typeName(ColumnType),
-                        " expected: ",
-                        column.name,
-                    }) catch |err| @panic(@errorName(err));
-                    @panic(msg);
-                }
+                checkColumn(gpa, column, ColumnType);
             }
             const columnValues = @ptrCast([*]ColumnType, @alignCast(@alignOf(ColumnType), &storage.block[column.offset]));
             return columnValues[row_index];
+        }
+        return null;
+    }
+
+    pub fn getPtr(storage: *ArchetypeStorage, gpa: Allocator, row_index: u32, name: []const u8, comptime ColumnType: type) ?*ColumnType {
+        for (storage.columns) |column| {
+            if (!std.mem.eql(u8, column.name, name)) continue;
+            if (@sizeOf(ColumnType) == 0) return {};
+            if (is_debug) {
+                checkColumn(gpa, column, ColumnType);
+            }
+            const columnValues = @ptrCast([*]ColumnType, @alignCast(@alignOf(ColumnType), &storage.block[column.offset]));
+            return &columnValues[row_index];
         }
         return null;
     }
@@ -665,6 +682,26 @@ pub fn Entities(comptime all_components: anytype) type {
 
             const ptr = entities.entities.get(entity).?;
             return archetype.get(entities.allocator, ptr.row_index, name, Component);
+        }
+
+        pub fn getComponentPtr(
+            entities: *Self,
+            entity: EntityID,
+            comptime namespace_name: std.meta.FieldEnum(@TypeOf(all_components)),
+            comptime component_name: std.meta.FieldEnum(@TypeOf(@field(all_components, @tagName(namespace_name)))),
+        ) ?*@field(
+            @field(all_components, @tagName(namespace_name)),
+            @tagName(component_name),
+        ) {
+            const Component = comptime @field(
+                @field(all_components, @tagName(namespace_name)),
+                @tagName(component_name),
+            );
+            const name = @tagName(namespace_name) ++ "." ++ @tagName(component_name);
+            var archetype = entities.archetypeByID(entity);
+
+            const ptr = entities.entities.get(entity).?;
+            return archetype.getPtr(entities.allocator, ptr.row_index, name, Component);
         }
 
         /// Removes the named component from the entity, or noop if it doesn't have such a component.
