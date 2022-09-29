@@ -662,7 +662,26 @@ pub fn Entities(comptime all_components: anytype) type {
             return;
         }
 
-        /// gets the named component of the given type (which must be correct, otherwise undefined
+        pub fn modifyComponent(
+            entities: *Self,
+            entity: EntityID,
+            comptime namespace_name: std.meta.FieldEnum(@TypeOf(all_components)),
+            comptime component_name: std.meta.FieldEnum(@TypeOf(@field(all_components, @tagName(namespace_name)))),
+            component: @field(
+                @field(all_components, @tagName(namespace_name)),
+                @tagName(component_name),
+            ),
+        ) void {
+            const name = @tagName(namespace_name) ++ "." ++ @tagName(component_name);
+            const archetype = entities.archetypeByID(entity);
+
+            var archetype_storage = entities.archetypes.getPtr(entities.allocator, archetype.hash).?;
+
+            const ptr = entities.entities.get(entity).?;
+            archetype_storage.set(entities.allocator, ptr.row_index, name, component);
+        }
+
+        /// gets the named component of the given entity (which must be valid, otherwise undefined
         /// behavior will occur). Returns null if the component does not exist on the entity.
         pub fn getComponent(
             entities: Self,
