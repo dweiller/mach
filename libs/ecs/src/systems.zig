@@ -232,9 +232,10 @@ fn NamespacedGlobals(comptime modules: anytype) type {
 
 pub fn World(comptime modules: anytype) type {
     const all_components = namespacedComponents(modules);
+    const WorldEntities = Entities(all_components);
     return struct {
         allocator: Allocator,
-        entities: Entities(all_components),
+        entities: WorldEntities,
         globals: NamespacedGlobals(modules),
 
         const Self = @This();
@@ -287,6 +288,153 @@ pub fn World(comptime modules: anytype) type {
                     if (@hasField(module.messages, "tick")) module.update(.tick);
                 }
             }
+        }
+
+        const namespaces = std.meta.fields(@TypeOf(all_components));
+
+        pub const ComponentAccess = ComponentAccess: {
+            var fields: [namespaces.len]std.builtin.Type.UnionField = undefined;
+
+            inline for (namespaces) |namespace, i| {
+                const component_enum = std.meta.FieldEnum(namespace.field_type);
+                const comp_info = @typeInfo(component_enum).Enum;
+                var comp_access_fields: [comp_info.fields.len]std.builtin.Type.StructField = undefined;
+                inline for (comp_access_fields) |*access, field_idx| {
+                    const field_name = comp_info.fields[field_idx].name;
+                    access.* = std.builtin.Type.StructField{
+                        .name = field_name,
+                        .field_type = ?Access,
+                        .default_value = &Access.unused,
+                        .is_comptime = false,
+                        .alignment = @alignOf(?Access),
+                    };
+                }
+                const CompAccess = @Type(std.builtin.Type{ .Struct = .{
+                    .layout = .Auto,
+                    .fields = &comp_access_fields,
+                    .decls = &.{},
+                    .is_tuple = false,
+                } });
+
+                fields[i] = .{
+                    .name = namespace.name,
+                    .field_type = CompAccess,
+                    .alignment = @alignOf(CompAccess),
+                };
+            }
+
+            // need type_info variable (rather than embedding in @Type() call)
+            // to work around stage 1 bug
+            const type_info = std.builtin.Type{
+                .Union = .{
+                    .layout = .Auto,
+                    .tag_type = std.meta.FieldEnum(@TypeOf(all_components)),
+                    .fields = &fields,
+                    .decls = &.{},
+                },
+            };
+            break :ComponentAccess @Type(type_info);
+        };
+
+        fn extractQuery(comptime components: []const ComponentAccess) []const WorldEntities.Query {
+            const num_components = 20;
+            var query: [num_components]WorldEntities.Query = undefined;
+            var comp_idx = 0;
+            for (components) |comp_access| {
+                const namespace = std.meta.activeTag(comp_access);
+                const namespace_name = @tagName(namespace);
+                const comp_struct = @field(comp_access, namespace_name);
+                const comp_info = @typeInfo(@TypeOf(comp_struct)).Struct;
+                inline for (comp_info.fields) |field, i| {
+                    const component = @field(comp_struct, field.name);
+                    _ = i;
+                    // const Component = std.meta.fieldInfo(
+                    //     WorldEntities.Query,
+                    //     @intToEnum(std.meta.FieldEnum(WorldEntities.Query), i),
+                    // ).field_type;
+                    if (component != null) {
+                        query[comp_idx] = @unionInit(
+                            WorldEntities.Query,
+                            @tagName(namespace),
+                            .id,
+                        );
+                        comp_idx += 1;
+                    }
+                }
+            }
+            return query[0..comp_idx];
+        }
+
+        pub const Access = union(enum) {
+            read: void,
+            modify: void,
+
+            const unused: ?Access = null;
+        };
+
+        fn SystemFuncType(comptime query: []const ComponentAccess) type {
+            var i = 0;
+            var params: [query.len]std.builtin.Type.Fn.Param = undefined;
+            for (query) |comp_access| {
+                const namespace = std.meta.activeTag(comp_access);
+                const components = @field(comp_access, @tagName(namespace));
+                for (@typeInfo(@TypeOf(components)).Struct.fields) |component_info| {
+                    const Component = @field(@field(all_components, @tagName(namespace)), component_info.name);
+                    const access = @field(components, component_info.name);
+                    if (access) |mode| {
+                        const param_type = switch (mode) {
+                            .read => Component,
+                            .modify => *Component,
+                        };
+                        params[i] = .{ .is_generic = false, .is_noalias = false, .arg_type = param_type };
+                        i += 1;
+                    }
+                }
+            }
+            const type_info = std.builtin.Type{
+                .Fn = .{
+                    .calling_convention = .Unspecified,
+                    .alignment = 0,
+                    .is_generic = false,
+                    .is_var_args = false,
+                    .return_type = void,
+                    .args = params[0..i],
+                },
+            };
+            return @Type(type_info);
+        }
+
+        pub fn LocalSystem(
+            comptime query_access: []const ComponentAccess,
+            comptime func: SystemFuncType(query_access),
+        ) fn (*Self) void {
+            const gen = struct {
+                pub fn update(world: *Self) void {
+                    const components = comptime extractQuery(query_access);
+                    var iter = world.entities.query(components);
+                    while (iter.next()) |entry| {
+                        var args: std.meta.ArgsTuple(@TypeOf(func)) = undefined;
+                        inline for (@typeInfo(@TypeOf(args)).Struct.fields) |field_info, i| {
+                            const namespace_name = comptime std.meta.activeTag(components[i]);
+                            const component_name = @field(components[i], @tagName(namespace_name));
+                            @field(args, field_info.name) = switch (@typeInfo(field_info.field_type)) {
+                                .Pointer => world.entities.getComponentPtr(
+                                    entry.entity,
+                                    namespace_name,
+                                    component_name,
+                                ).?,
+                                else => world.entities.getComponent(
+                                    entry.entity,
+                                    namespace_name,
+                                    component_name,
+                                ).?,
+                            };
+                        }
+                        @call(.{ .modifier = .always_inline }, func, args);
+                    }
+                }
+            };
+            return gen.update;
         }
     };
 }

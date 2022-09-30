@@ -59,6 +59,18 @@ test "example" {
         }
     }).physicsUpdate;
 
+    const localPhysicsRenderer = (struct {
+        pub fn func(physics_id: u32, renderer_id: u16) void {
+            std.debug.print("physics id: {d}, renderer id: {d}\n", .{ physics_id, renderer_id });
+        }
+    }).func;
+
+    const localPhysics = (struct {
+        pub fn func(physics_id: *u32) void {
+            std.debug.print("physics id: {d}\n", .{physics_id.*});
+        }
+    }).func;
+
     const modules = Modules(.{
         .physics = Module(.{
             .components = .{
@@ -82,6 +94,16 @@ test "example" {
     var world = try World(modules).init(allocator);
     defer world.deinit();
 
+    const local_physics_renderer_system = World(modules).LocalSystem(
+        &.{ .{ .physics = .{ .id = .read } }, .{ .renderer = .{ .id = .read } } },
+        localPhysicsRenderer,
+    );
+
+    const local_physics_system = World(modules).LocalSystem(
+        &.{.{ .physics = .{ .id = .modify } }},
+        localPhysics,
+    );
+
     // Initialize globals.
     world.set(.physics, .pointer, 123);
     _ = world.get(.physics, .pointer); // == 123
@@ -92,8 +114,13 @@ test "example" {
     try world.entities.setComponent(player1, .physics, .id, 1234);
     try world.entities.setComponent(player1, .renderer, .id, 1234);
 
-    try world.entities.setComponent(player2, .physics, .id, 1234);
-    try world.entities.setComponent(player3, .physics, .id, 1234);
+    try world.entities.setComponent(player2, .physics, .id, 1235);
+    try world.entities.setComponent(player3, .physics, .id, 1236);
 
+    std.debug.print("\n---doing world tick---\n", .{});
     world.tick();
+    std.debug.print("\n---doing physics-render local system---\n", .{});
+    local_physics_renderer_system(&world);
+    std.debug.print("\n---doing physics local system---\n", .{});
+    local_physics_system(&world);
 }

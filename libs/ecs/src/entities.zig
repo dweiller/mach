@@ -465,7 +465,7 @@ pub fn Entities(comptime all_components: anytype) type {
         }
 
         pub fn query(entities: *Self, comptime components: []const Query) Iter(components) {
-            return Iter(components){
+            return .{
                 .entities = entities,
             };
         }
