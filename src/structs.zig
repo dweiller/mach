@@ -42,6 +42,9 @@ pub const Options = struct {
     /// Headless mode.
     headless: bool = false,
 
+    /// Borderless window
+    borderless_window: bool = false,
+
     /// Monitor synchronization modes.
     vsync: enums.VSyncMode = .double,
 
@@ -52,9 +55,9 @@ pub const Options = struct {
     required_limits: ?gpu.Limits = null,
 
     /// Whether the application has a preference for low power or high performance GPU.
-    power_preference: gpu.PowerPreference = .undef,
+    power_preference: gpu.PowerPreference = .undefined,
 
-    /// If set, optimize for regular applications rather than games. e.g. disable Linux gamemode / process priority, prefer low-power GPU (if preference is .undef), etc.
+    /// If set, optimize for regular applications rather than games. e.g. disable Linux gamemode / process priority, prefer low-power GPU (if preference is .undefined), etc.
     is_app: bool = false,
 };
 

@@ -34,8 +34,8 @@ fn detectBackendType(allocator: std.mem.Allocator) !gpu.BackendType {
     const MACH_GPU_BACKEND = try getEnvVarOwned(allocator, "MACH_GPU_BACKEND");
     if (MACH_GPU_BACKEND) |backend| {
         defer allocator.free(backend);
-        if (std.ascii.eqlIgnoreCase(backend, "null")) return .nul;
-        if (std.ascii.eqlIgnoreCase(backend, "webgpu")) return .nul;
+        if (std.ascii.eqlIgnoreCase(backend, "null")) return .null;
+        if (std.ascii.eqlIgnoreCase(backend, "webgpu")) return .null;
         if (std.ascii.eqlIgnoreCase(backend, "d3d11")) return .d3d11;
         if (std.ascii.eqlIgnoreCase(backend, "d3d12")) return .d3d12;
         if (std.ascii.eqlIgnoreCase(backend, "metal")) return .metal;
@@ -92,7 +92,7 @@ pub fn setup(allocator: std.mem.Allocator) !Setup {
     var response: ?RequestAdapterResponse = null;
     instance.?.requestAdapter(&gpu.RequestAdapterOptions{
         .compatible_surface = surface,
-        .power_preference = .undef,
+        .power_preference = .undefined,
         .force_fallback_adapter = false,
     }, &response, requestAdapterCallback);
     if (response.?.status != .success) {
