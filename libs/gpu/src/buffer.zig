@@ -1,5 +1,6 @@
 const std = @import("std");
 const ChainedStruct = @import("types.zig").ChainedStruct;
+const dawn = @import("dawn.zig");
 const MapModeFlags = @import("types.zig").MapModeFlags;
 const Impl = @import("interface.zig").Impl;
 
@@ -11,6 +12,12 @@ pub const Buffer = opaque {
         uniform = 0x00000001,
         storage = 0x00000002,
         read_only_storage = 0x00000003,
+    };
+
+    pub const MapState = enum(u32) {
+        unmapped = 0x00000000,
+        pending = 0x00000001,
+        mapped = 0x00000002,
     };
 
     pub const MapAsyncStatus = enum(u32) {
@@ -58,7 +65,12 @@ pub const Buffer = opaque {
     };
 
     pub const Descriptor = extern struct {
-        next_in_chain: ?*const ChainedStruct = null,
+        pub const NextInChain = extern union {
+            generic: ?*const ChainedStruct,
+            dawn_buffer_descriptor_error_info_from_wire_client: *const dawn.BufferDescriptorErrorInfoFromWireClient,
+        };
+
+        next_in_chain: NextInChain = .{ .generic = null },
         label: ?[*:0]const u8 = null,
         usage: UsageFlags,
         size: u64,
@@ -67,6 +79,10 @@ pub const Buffer = opaque {
 
     pub inline fn destroy(buffer: *Buffer) void {
         Impl.bufferDestroy(buffer);
+    }
+
+    pub inline fn getMapState(buffer: *Buffer) MapState {
+        return Impl.bufferGetMapState(buffer);
     }
 
     /// Default `offset_bytes`: 0

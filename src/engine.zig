@@ -1,6 +1,8 @@
-pub const Core = @import("Core.zig");
-pub const gpu = @import("gpu");
-pub const ecs = @import("ecs");
+const Core = @import("core").Core;
+const gpu = @import("core").gpu;
+
+const std = @import("std");
+const ecs = @import("ecs");
 
 /// The Mach engine ECS module. This enables access to `engine.get(.mach, .core)` `*Core` APIs, as
 /// to for example `.setOptions(.{.title = "foobar"})`, or to access the GPU device via
@@ -12,6 +14,9 @@ pub const module = ecs.Module(.{
     },
 });
 
+var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+const allocator = gpa.allocator();
+
 pub fn App(
     comptime modules: anytype,
     comptime app_init: anytype, // fn (engine: *ecs.World(modules)) !void
@@ -21,30 +26,30 @@ pub fn App(
 
     return struct {
         engine: ecs.World(modules),
+        core: Core,
 
-        pub fn init(app: *@This(), core: *Core) !void {
+        pub fn init(app: *@This()) !void {
+            try app.core.init(allocator, .{});
             app.* = .{
-                .engine = try ecs.World(modules).init(core.allocator),
+                .core = app.core,
+                .engine = try ecs.World(modules).init(allocator),
             };
-            app.*.engine.set(.mach, .core, core);
-            app.*.engine.set(.mach, .device, core.device);
+            app.engine.set(.mach, .core, &app.core);
+            app.engine.set(.mach, .device, app.core.device());
             try app_init(&app.engine);
         }
 
-        pub fn deinit(app: *@This(), _: *Core) void {
+        pub fn deinit(app: *@This()) void {
+            const core = app.engine.get(.mach, .core);
+            core.deinit();
+            allocator.destroy(core);
             app.engine.deinit();
+            _ = gpa.deinit();
         }
 
-        pub fn update(app: *@This(), _: *Core) !void {
+        pub fn update(app: *@This()) !bool {
             app.engine.tick();
-        }
-
-        pub fn resize(app: *@This(), core: *Core, width: u32, height: u32) !void {
-            _ = app;
-            _ = core;
-            _ = width;
-            _ = height;
-            // TODO: send resize messages to ECS modules
+            return false;
         }
     };
 }

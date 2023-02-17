@@ -1,27 +1,7 @@
 const std = @import("std");
-const Builder = std.build.Builder;
 
 pub fn Sdk(comptime deps: anytype) type {
     return struct {
-        var cached_pkg: ?std.build.Pkg = null;
-
-        pub fn pkg(b: *Builder) std.build.Pkg {
-            if (cached_pkg == null) {
-                const dependencies = b.allocator.create([1]std.build.Pkg) catch unreachable;
-                dependencies.* = .{
-                    deps.sysjs.pkg(b),
-                };
-
-                cached_pkg = .{
-                    .name = "sysaudio",
-                    .source = .{ .path = sdkPath(b, "/src/main.zig") },
-                    .dependencies = dependencies,
-                };
-            }
-
-            return cached_pkg.?;
-        }
-
         pub const Options = struct {
             install_libs: bool = false,
 
@@ -29,16 +9,29 @@ pub fn Sdk(comptime deps: anytype) type {
             system_sdk: deps.system_sdk.Options = .{},
         };
 
-        pub fn testStep(b: *Builder, mode: std.builtin.Mode, target: std.zig.CrossTarget) *std.build.RunStep {
-            const main_tests = b.addTestExe("sysaudio-tests", sdkPath(b, "/src/main.zig"));
-            main_tests.setBuildMode(mode);
-            main_tests.setTarget(target);
+        pub fn module(b: *std.Build) *std.build.Module {
+            return b.createModule(.{
+                .source_file = .{ .path = sdkPath("/src/main.zig") },
+                .dependencies = &.{
+                    .{ .name = "sysjs", .module = deps.sysjs.module(b) },
+                },
+            });
+        }
+
+        pub fn testStep(b: *std.Build, optimize: std.builtin.OptimizeMode, target: std.zig.CrossTarget) *std.build.RunStep {
+            const main_tests = b.addTest(.{
+                .name = "sysaudio-tests",
+                .kind = .test_exe,
+                .root_source_file = .{ .path = sdkPath("/src/main.zig") },
+                .target = target,
+                .optimize = optimize,
+            });
             link(b, main_tests, .{});
             main_tests.install();
             return main_tests.run();
         }
 
-        pub fn link(b: *Builder, step: *std.build.LibExeObjStep, options: Options) void {
+        pub fn link(b: *std.Build, step: *std.build.CompileStep, options: Options) void {
             if (step.target.toTarget().cpu.arch != .wasm32) {
                 // TODO(build-system): pass system SDK options through
                 deps.system_sdk.include(b, step, .{});
@@ -47,9 +40,7 @@ pub fn Sdk(comptime deps: anytype) type {
                     step.linkFramework("CoreFoundation");
                     step.linkFramework("CoreAudio");
                 } else if (step.target.toTarget().os.tag == .linux) {
-                    step.linkSystemLibrary("asound");
-                    step.linkSystemLibrary("pulse");
-                    step.linkSystemLibrary("jack");
+                    step.addCSourceFile(sdkPath("/src/pipewire/sysaudio.c"), &.{"-std=gnu99"});
                     step.linkLibC();
                 }
             }
@@ -64,37 +55,19 @@ pub fn Sdk(comptime deps: anytype) type {
                 if (std.mem.eql(u8, no_ensure_submodules, "true")) return;
             } else |_| {}
             var child = std.ChildProcess.init(&.{ "git", "submodule", "update", "--init", path }, allocator);
-            child.cwd = sdkPathAllocator(allocator, "/");
+            child.cwd = sdkPath("/");
             child.stderr = std.io.getStdErr();
             child.stdout = std.io.getStdOut();
 
             _ = try child.spawnAndWait();
         }
 
-        var this_dir: ?[]const u8 = null;
-
-        fn thisDir(allocator: std.mem.Allocator) []const u8 {
-            if (this_dir == null) {
-                const unresolved_dir = comptime std.fs.path.dirname(@src().file) orelse ".";
-
-                if (comptime unresolved_dir[0] == '/') {
-                    this_dir = unresolved_dir;
-                } else {
-                    this_dir = std.fs.cwd().realpathAlloc(allocator, unresolved_dir) catch unreachable;
-                }
-            }
-
-            return this_dir.?;
-        }
-
-        fn sdkPath(b: *Builder, comptime suffix: []const u8) []const u8 {
-            return sdkPathAllocator(b.allocator, suffix);
-        }
-
-        fn sdkPathAllocator(allocator: std.mem.Allocator, comptime suffix: []const u8) []const u8 {
+        fn sdkPath(comptime suffix: []const u8) []const u8 {
             if (suffix[0] != '/') @compileError("suffix must be an absolute path");
-
-            return std.fs.path.resolve(allocator, &.{ thisDir(allocator), suffix[1..] }) catch unreachable;
+            return comptime blk: {
+                const root_dir = std.fs.path.dirname(@src().file) orelse ".";
+                break :blk root_dir ++ suffix;
+            };
         }
     };
 }

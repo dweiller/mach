@@ -18,7 +18,7 @@ Then in your `build.zig` add:
 ...
 const wasmserve = @import("libs/wasmserve/wasmserve.zig");
 
-pub fn build(b: *Builder) void {
+pub fn build(b: *Build) void {
     ...
     const serve_step = try wasmserve.serve(exe, .{ .watch_paths = &.{"src/main.zig"} });
     const run_step = b.step("run", "Run development web server");
@@ -28,4 +28,4 @@ pub fn build(b: *Builder) void {
 
 ## Join the community
 
-Join the Mach community [on Discord](https://discord.gg/XNG3NZgCqp) or [Matrix](https://matrix.to/#/#hexops:matrix.org) to discuss this project, ask questions, get help, etc.
+Join the Mach community [on Discord](https://discord.gg/XNG3NZgCqp) to discuss this project, ask questions, get help, etc.

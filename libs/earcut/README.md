@@ -30,9 +30,9 @@ Then in your `build.zig` add:
 ...
 const earcut = @import("libs/mach-earcut/build.zig");
 
-pub fn build(b: *Builder) void {
+pub fn build(b: *Build) void {
     ...
-    exe.addPackage(earcut.pkg(b));
+    exe.addModule("earcut", earcut.module(b));
 }
 ```
 
@@ -40,7 +40,7 @@ For usage, see `src/main.zig` `test "basic"`.
 
 ## Join the community
 
-Join the Mach community [on Discord](https://discord.gg/XNG3NZgCqp) or [Matrix](https://matrix.to/#/#hexops:matrix.org) to discuss this project, ask questions, get help, etc.
+Join the Mach community [on Discord](https://discord.gg/XNG3NZgCqp) to discuss this project, ask questions, get help, etc.
 
 ## Issues
 

@@ -18,16 +18,16 @@ Then in your `build.zig` add:
 ...
 const basisu = @import("libs/mach-basisu/build.zig");
 
-pub fn build(b: *Builder) void {
+pub fn build(b: *Build) void {
     ...
-    exe.addPackage(basisu.pkg);
+    exe.addModule("basisu", basisu.module(b));
     basisu.link(b, exe, .{});
 }
 ```
 
 ## Join the community
 
-Join the Mach community [on Discord](https://discord.gg/XNG3NZgCqp) or [Matrix](https://matrix.to/#/#hexops:matrix.org) to discuss this project, ask questions, get help, etc.
+Join the Mach community [on Discord](https://discord.gg/XNG3NZgCqp) to discuss this project, ask questions, get help, etc.
 
 ## Issues
 

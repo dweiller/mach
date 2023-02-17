@@ -7,7 +7,7 @@ const util = @import("util.zig");
 const channel_size = 1024;
 const channel_size_bytes = channel_size * @sizeOf(f32);
 
-const dummy_playback = main.Device{
+const default_playback = main.Device{
     .id = "default-playback",
     .name = "Default Device",
     .mode = .playback,
@@ -52,7 +52,7 @@ pub const Context = struct {
             freeDevice(self.allocator, d);
         self.devices_info.clear(self.allocator);
 
-        try self.devices_info.list.append(self.allocator, dummy_playback);
+        try self.devices_info.list.append(self.allocator, default_playback);
         self.devices_info.list.items[0].channels = try self.allocator.alloc(main.Channel, 2);
         self.devices_info.list.items[0].channels[0] = .{ .id = .front_left };
         self.devices_info.list.items[0].channels[1] = .{ .id = .front_right };
@@ -112,9 +112,9 @@ pub const Context = struct {
             .is_paused = false,
             .writeFn = writeFn,
             .user_data = options.user_data,
-            .sample_rate = options.sample_rate,
             .channels = device.channels,
             .format = .f32,
+            .sample_rate = options.sample_rate,
             .write_step = @sizeOf(f32),
         };
 
@@ -138,10 +138,10 @@ pub const Player = struct {
     is_paused: bool,
     writeFn: main.WriteFn,
     user_data: ?*anyopaque,
-    sample_rate: u24,
 
     channels: []main.Channel,
     format: main.Format,
+    sample_rate: u24,
     write_step: u8,
 
     pub fn deinit(self: *Player) void {
@@ -220,10 +220,6 @@ pub const Player = struct {
         const gain = self.gain_node.get("gain").view(.object);
         defer gain.deinit();
         return @floatCast(f32, gain.get("value").view(.num));
-    }
-
-    pub fn sampleRate(self: Player) u24 {
-        return self.sample_rate;
     }
 };
 

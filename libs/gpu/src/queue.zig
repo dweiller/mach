@@ -3,6 +3,7 @@ const CommandBuffer = @import("command_buffer.zig").CommandBuffer;
 const Buffer = @import("buffer.zig").Buffer;
 const Texture = @import("texture.zig").Texture;
 const ImageCopyTexture = @import("types.zig").ImageCopyTexture;
+const ImageCopyExternalTexture = @import("types.zig").ImageCopyExternalTexture;
 const ChainedStruct = @import("types.zig").ChainedStruct;
 const Extent3D = @import("types.zig").Extent3D;
 const CopyTextureForBrowserOptions = @import("types.zig").CopyTextureForBrowserOptions;
@@ -25,6 +26,10 @@ pub const Queue = opaque {
         next_in_chain: ?*const ChainedStruct = null,
         label: ?[*:0]const u8 = null,
     };
+
+    pub inline fn copyExternalTextureForBrowser(queue: *Queue, source: *const ImageCopyExternalTexture, destination: *const ImageCopyTexture, copy_size: *const Extent3D, options: *const CopyTextureForBrowserOptions) void {
+        Impl.queueCopyExternalTextureForBrowser(queue, source, destination, copy_size, options);
+    }
 
     pub inline fn copyTextureForBrowser(queue: *Queue, source: *const ImageCopyTexture, destination: *const ImageCopyTexture, copy_size: *const Extent3D, options: *const CopyTextureForBrowserOptions) void {
         Impl.queueCopyTextureForBrowser(queue, source, destination, copy_size, options);
@@ -58,14 +63,13 @@ pub const Queue = opaque {
         queue: *Queue,
         buffer: *Buffer,
         buffer_offset_bytes: u64,
-        data_span: anytype,
+        data_slice: anytype,
     ) void {
-        const data_slice = std.mem.span(data_span);
         Impl.queueWriteBuffer(
             queue,
             buffer,
             buffer_offset_bytes,
-            @ptrCast(*const anyopaque, data_slice.ptr),
+            @ptrCast(*const anyopaque, std.mem.sliceAsBytes(data_slice).ptr),
             data_slice.len * @sizeOf(std.meta.Elem(@TypeOf(data_slice))),
         );
     }
@@ -75,13 +79,12 @@ pub const Queue = opaque {
         destination: *const ImageCopyTexture,
         data_layout: *const Texture.DataLayout,
         write_size: *const Extent3D,
-        data_span: anytype,
+        data_slice: anytype,
     ) void {
-        const data_slice = std.mem.span(data_span);
         Impl.queueWriteTexture(
             queue,
             destination,
-            @ptrCast(*const anyopaque, data_slice.ptr),
+            @ptrCast(*const anyopaque, std.mem.sliceAsBytes(data_slice).ptr),
             @intCast(usize, data_slice.len) * @sizeOf(std.meta.Elem(@TypeOf(data_slice))),
             data_layout,
             write_size,

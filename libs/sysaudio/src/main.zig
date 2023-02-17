@@ -3,19 +3,14 @@ const std = @import("std");
 const util = @import("util.zig");
 const backends = @import("backends.zig");
 
+pub const Backend = backends.Backend;
 pub const default_sample_rate = 44_100; // Hz
 pub const default_latency = 500 * std.time.us_per_ms; // μs
-
-pub const Backend = backends.Backend;
-pub const DeviceChangeFn = *const fn (self: ?*anyopaque) void;
-pub const ConnectError = error{
-    OutOfMemory,
-    AccessDenied,
-    SystemResources,
-    ConnectionRefused,
-};
+pub const min_sample_rate = 8_000; // Hz
+pub const max_sample_rate = 5_644_800; // Hz
 
 pub const Context = struct {
+    pub const DeviceChangeFn = *const fn (self: ?*anyopaque) void;
     pub const Options = struct {
         app_name: [:0]const u8 = "Mach Game",
         deviceChangeFn: ?DeviceChangeFn = null,
@@ -24,7 +19,16 @@ pub const Context = struct {
 
     data: backends.BackendContext,
 
-    pub fn init(comptime backend: ?Backend, allocator: std.mem.Allocator, options: Options) ConnectError!Context {
+    pub const InitError = error{
+        OutOfMemory,
+        AccessDenied,
+        LibraryNotFound,
+        SymbolLookup,
+        SystemResources,
+        ConnectionRefused,
+    };
+
+    pub fn init(comptime backend: ?Backend, allocator: std.mem.Allocator, options: Options) InitError!Context {
         var data: backends.BackendContext = blk: {
             if (backend) |b| {
                 break :blk try @typeInfo(
@@ -104,7 +108,16 @@ pub const Player = struct {
     pub const Options = struct {
         format: Format = .f32,
         sample_rate: u24 = default_sample_rate,
+        media_role: MediaRole = .default,
         user_data: ?*anyopaque = null,
+    };
+
+    pub const MediaRole = enum {
+        default,
+        game,
+        music,
+        movie,
+        communication,
     };
 
     data: backends.BackendPlayer,
@@ -185,7 +198,7 @@ pub const Player = struct {
 
     pub fn write(self: Player, channel: Channel, frame: usize, sample: anytype) void {
         switch (@TypeOf(sample)) {
-            f32, u8, i8, i16, i24, i32 => {},
+            u8, i8, i16, i24, i32, f32 => {},
             else => @compileError(
                 \\invalid sample type. supported types are:
                 \\u8, i8, i16, i24, i32, f32
@@ -239,8 +252,11 @@ pub const Player = struct {
     }
 
     pub fn sampleRate(self: Player) u24 {
-        return switch (self.data) {
-            inline else => |b| b.sampleRate(),
+        return if (@hasField(Backend, "jack")) switch (self.data) {
+            .jack => |b| b.sampleRate(),
+            inline else => |b| b.sample_rate,
+        } else switch (self.data) {
+            inline else => |b| b.sample_rate,
         };
     }
 

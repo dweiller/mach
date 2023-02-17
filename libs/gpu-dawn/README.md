@@ -31,7 +31,7 @@ This will take ~10 minutes to finish (see the 'binary releases' section below.) 
 
 | Option                        | Description                                                |
 |-------------------------------|------------------------------------------------------------|
-| `-Drelease-fast=true`         | Build a release binary instead of a debug binary (default) |
+| `-Doptimize=ReleaseFast`      | Build a release binary instead of a debug binary (default) |
 | `-Dtarget=x86_64-macos.12`    | Cross compile to macOS (Intel chipsets)                    |
 | `-Dtarget=aarch64-macos.12`   | Cross compile to macOS (Apple Silicon)                     |
 | `-Dtarget=x86_64-linux-gnu`   | Cross compile to x86_64 Linux (glibc)                      |
@@ -65,8 +65,8 @@ When you call a Dawn `webgpu.h` function, Dawn internally diverts this call thro
 
 `mach/gpu-dawn` builds since Oct 17th 2022 no longer include the `webgpu.h` symbols by default. If you intend to actually call the WebGPU API, you should build these two source files as part of your application:
 
-1. [`dawn_proc.c`](https://raw.githubusercontent.com/hexops/dawn/generated-2022-08-06/out/Debug/gen/src/dawn/dawn_proc.c)
-2. [`webgpu_dawn_native_proc.cpp`](https://raw.githubusercontent.com/hexops/dawn/generated-2022-08-06/out/Debug/gen/src/dawn/native/webgpu_dawn_native_proc.cpp)
+1. [`dawn_proc.c`](https://raw.githubusercontent.com/hexops/dawn/generated-2023-01-28.1674950134/out/Debug/gen/src/dawn/dawn_proc.c)
+2. [`webgpu_dawn_native_proc.cpp`](https://raw.githubusercontent.com/hexops/dawn/generated-2023-01-28.1674950134/out/Debug/gen/src/dawn/native/webgpu_dawn_native_proc.cpp)
 
 And call `dawnProcSetProcs` to set up the proc table.
 
@@ -87,7 +87,7 @@ It also provides a [few small patches to enable building Dawn with the Zig compi
 
 ## Join the community
 
-Join the Mach engine community [on Matrix chat](https://matrix.to/#/#hexops:matrix.org) to discuss this project, ask questions, get help, etc.
+Join the Mach engine community [on Discord](https://discord.gg/XNG3NZgCqp) to discuss this project, ask questions, get help, etc.
 
 ## Issues
 

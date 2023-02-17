@@ -30,7 +30,7 @@
 //! version: Mar 4, 2022
 
 const std = @import("std");
-const Builder = std.build.Builder;
+const Build = std.Build;
 
 pub const Options = struct {
     pub const Sdk = struct {
@@ -72,7 +72,7 @@ pub const Options = struct {
         .{
             .name = "sdk-linux-x86_64",
             .git_addr = "https://github.com/hexops/sdk-linux-x86_64",
-            .git_revision = "1cb61f593dfe1364c3189b29e21ae01efe1651fc",
+            .git_revision = "ebd1ce12e9abc152c7ed43afbcdb4b6e1c95be07",
             .cpu_arch = &.{.x86_64},
             .os_tag = .linux,
             .os_version = .{
@@ -88,7 +88,7 @@ pub const Options = struct {
         .{
             .name = "sdk-linux-aarch64",
             .git_addr = "https://github.com/hexops/sdk-linux-aarch64",
-            .git_revision = "21571f3c268a646ed4c14e48e8ae0c6604c72963",
+            .git_revision = "a279b0a3ef2f103b308defcd7e1a32e20346f70b",
             .cpu_arch = &.{.aarch64},
             .os_tag = .linux,
             .os_version = .{
@@ -123,7 +123,7 @@ pub const Options = struct {
     set_sysroot: bool = false,
 };
 
-pub fn include(b: *Builder, step: *std.build.LibExeObjStep, options: Options) void {
+pub fn include(b: *Build, step: *std.build.CompileStep, options: Options) void {
     const target = step.target_info.target;
     // var best_sdk: ?Options.Sdk = null;
     for (options.sdk_list) |sdk| {

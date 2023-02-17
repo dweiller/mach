@@ -49,7 +49,7 @@ pub const RequestAdapterResponse = struct {
 };
 
 pub inline fn requestAdapterCallback(
-    context: *?RequestAdapterResponse,
+    context: *RequestAdapterResponse,
     status: gpu.RequestAdapterStatus,
     adapter: *gpu.Adapter,
     message: ?[*:0]const u8,
@@ -90,7 +90,7 @@ pub fn detectGLFWOptions() glfw.BackendOptions {
     if (target.isDarwin()) return .{ .cocoa = true };
     return switch (target.os.tag) {
         .windows => .{ .win32 = true },
-        .linux => .{ .x11 = true },
+        .linux => .{ .x11 = true, .wayland = true },
         else => .{},
     };
 }
@@ -111,6 +111,11 @@ pub fn createSurfaceForWindow(
             .display = glfw_native.getX11Display(),
             .window = glfw_native.getX11Window(window),
         },
+    } else if (glfw_options.wayland) gpu.Surface.Descriptor.NextInChain{
+        .from_wayland_surface = &.{
+            .display = glfw_native.getWaylandDisplay(),
+            .surface = glfw_native.getWaylandWindow(window),
+        },
     } else if (glfw_options.cocoa) blk: {
         const ns_window = glfw_native.getCocoaWindow(window);
         const ns_view = msgSend(ns_window, "contentView", .{}, *anyopaque); // [nsWindow contentView]
@@ -126,8 +131,6 @@ pub fn createSurfaceForWindow(
         msgSend(layer.?, "setContentsScale:", .{scale_factor}, void); // [layer setContentsScale:scale_factor]
 
         break :blk gpu.Surface.Descriptor.NextInChain{ .from_metal_layer = &.{ .layer = layer.? } };
-    } else if (glfw_options.wayland) {
-        @panic("TODO: this example does not support Wayland");
     } else unreachable;
 
     return instance.createSurface(&gpu.Surface.Descriptor{
@@ -168,11 +171,11 @@ pub fn msgSend(obj: anytype, sel_name: [:0]const u8, args: anytype, comptime Ret
     const args_meta = @typeInfo(@TypeOf(args)).Struct.fields;
 
     const FnType = switch (args_meta.len) {
-        0 => *const fn (@TypeOf(obj), objc.SEL) callconv(.C) ReturnType,
-        1 => *const fn (@TypeOf(obj), objc.SEL, args_meta[0].type) callconv(.C) ReturnType,
-        2 => *const fn (@TypeOf(obj), objc.SEL, args_meta[0].type, args_meta[1].type) callconv(.C) ReturnType,
-        3 => *const fn (@TypeOf(obj), objc.SEL, args_meta[0].type, args_meta[1].type, args_meta[2].type) callconv(.C) ReturnType,
-        4 => *const fn (@TypeOf(obj), objc.SEL, args_meta[0].type, args_meta[1].type, args_meta[2].type, args_meta[3].type) callconv(.C) ReturnType,
+        0 => *const fn (@TypeOf(obj), ?*objc.SEL) callconv(.C) ReturnType,
+        1 => *const fn (@TypeOf(obj), ?*objc.SEL, args_meta[0].type) callconv(.C) ReturnType,
+        2 => *const fn (@TypeOf(obj), ?*objc.SEL, args_meta[0].type, args_meta[1].type) callconv(.C) ReturnType,
+        3 => *const fn (@TypeOf(obj), ?*objc.SEL, args_meta[0].type, args_meta[1].type, args_meta[2].type) callconv(.C) ReturnType,
+        4 => *const fn (@TypeOf(obj), ?*objc.SEL, args_meta[0].type, args_meta[1].type, args_meta[2].type, args_meta[3].type) callconv(.C) ReturnType,
         else => @compileError("Unsupported number of args"),
     };
 

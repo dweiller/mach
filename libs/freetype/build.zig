@@ -1,42 +1,25 @@
 const std = @import("std");
-const Builder = std.build.Builder;
+const Build = std.Build;
 
-const ft_root = "/upstream/freetype";
+const ft_root = sdkPath("/upstream/freetype");
 const ft_include_path = ft_root ++ "/include";
-const hb_root = "/upstream/harfbuzz";
+const hb_root = sdkPath("/upstream/harfbuzz");
 const hb_include_path = hb_root ++ "/src";
-const brotli_root = "/upstream/brotli";
+const brotli_root = sdkPath("/upstream/brotli");
 
-var cached_pkg: ?std.build.Pkg = null;
-var cached_harfbuzz_pkg: ?std.build.Pkg = null;
-
-pub fn pkg(b: *Builder) std.build.Pkg {
-    if (cached_pkg == null) {
-        cached_pkg = .{
-            .name = "freetype",
-            .source = .{ .path = sdkPath(b, "/src/main.zig") },
-            .dependencies = &.{},
-        };
-    }
-
-    return cached_pkg.?;
+pub fn module(b: *std.Build) *std.build.Module {
+    return b.createModule(.{
+        .source_file = .{ .path = sdkPath("/src/main.zig") },
+    });
 }
 
-pub fn harfbuzz_pkg(b: *Builder) std.build.Pkg {
-    if (cached_harfbuzz_pkg == null) {
-        const dependencies = b.allocator.create([1]std.build.Pkg) catch unreachable;
-        dependencies.* = .{
-            pkg(b),
-        };
-
-        cached_harfbuzz_pkg = .{
-            .name = "harfbuzz",
-            .source = .{ .path = sdkPath(b, "/src/harfbuzz/main.zig") },
-            .dependencies = dependencies,
-        };
-    }
-
-    return cached_harfbuzz_pkg.?;
+pub fn harfbuzzModule(b: *std.Build) *std.build.Module {
+    return b.createModule(.{
+        .source_file = .{ .path = sdkPath("/src/harfbuzz/main.zig") },
+        .dependencies = &.{
+            .{ .name = "freetype", .module = module(b) },
+        },
+    });
 }
 
 pub const Options = struct {
@@ -57,21 +40,24 @@ pub const HarfbuzzOptions = struct {
     install_libs: bool = false,
 };
 
-pub fn build(b: *std.build.Builder) !void {
-    const mode = b.standardReleaseOptions();
+pub fn build(b: *std.Build) !void {
+    const optimize = b.standardOptimizeOption(.{});
     const target = b.standardTargetOptions(.{});
 
     const test_step = b.step("test", "Run library tests");
-    test_step.dependOn(&testStep(b, mode, target).step);
+    test_step.dependOn(&testStep(b, optimize, target).step);
 
     inline for ([_][]const u8{
         "single-glyph",
         "glyph-to-svg",
     }) |example| {
-        const example_exe = b.addExecutable("example-" ++ example, "examples/" ++ example ++ ".zig");
-        example_exe.setBuildMode(mode);
-        example_exe.setTarget(target);
-        example_exe.addPackage(pkg(b));
+        const example_exe = b.addExecutable(.{
+            .name = "example-" ++ example,
+            .root_source_file = .{ .path = "examples/" ++ example ++ ".zig" },
+            .target = target,
+            .optimize = optimize,
+        });
+        example_exe.addModule("freetype", module(b));
 
         link(b, example_exe, .{});
 
@@ -90,31 +76,39 @@ pub fn build(b: *std.build.Builder) !void {
     }
 }
 
-pub fn testStep(b: *Builder, mode: std.builtin.Mode, target: std.zig.CrossTarget) *std.build.RunStep {
-    const main_tests = b.addTestExe("freetype-tests", sdkPath(b, "/src/main.zig"));
-    main_tests.setBuildMode(mode);
-    main_tests.setTarget(target);
-    main_tests.addPackage(pkg(b));
+pub fn testStep(b: *Build, optimize: std.builtin.OptimizeMode, target: std.zig.CrossTarget) *std.build.RunStep {
+    const main_tests = b.addTest(.{
+        .name = "freetype-tests",
+        .kind = .test_exe,
+        .root_source_file = .{ .path = sdkPath("/src/main.zig") },
+        .target = target,
+        .optimize = optimize,
+    });
+    main_tests.addModule("freetype", module(b));
     link(b, main_tests, .{
         .freetype = .{
             .brotli = true,
         },
         .harfbuzz = .{},
     });
-    main_tests.main_pkg_path = sdkPath(b, "/");
+    main_tests.main_pkg_path = sdkPath("/");
     main_tests.install();
 
-    const harfbuzz_tests = b.addTestExe("harfbuzz-tests", sdkPath(b, "/src/harfbuzz/main.zig"));
-    harfbuzz_tests.setBuildMode(mode);
-    harfbuzz_tests.setTarget(target);
-    harfbuzz_tests.addPackage(pkg(b));
+    const harfbuzz_tests = b.addTest(.{
+        .name = "harfbuzz-tests",
+        .kind = .test_exe,
+        .root_source_file = .{ .path = sdkPath("/src/harfbuzz/main.zig") },
+        .target = target,
+        .optimize = optimize,
+    });
+    harfbuzz_tests.addModule("freetype", module(b));
     link(b, harfbuzz_tests, .{
         .freetype = .{
             .brotli = true,
         },
         .harfbuzz = .{},
     });
-    harfbuzz_tests.main_pkg_path = sdkPath(b, "/");
+    harfbuzz_tests.main_pkg_path = sdkPath("/");
     harfbuzz_tests.install();
 
     const main_tests_run = main_tests.run();
@@ -122,43 +116,45 @@ pub fn testStep(b: *Builder, mode: std.builtin.Mode, target: std.zig.CrossTarget
     return main_tests_run;
 }
 
-pub fn link(b: *Builder, step: *std.build.LibExeObjStep, options: Options) void {
+pub fn link(b: *Build, step: *std.build.CompileStep, options: Options) void {
     linkFreetype(b, step, options.freetype);
     if (options.harfbuzz) |harfbuzz_options|
         linkHarfbuzz(b, step, harfbuzz_options);
 }
 
-pub fn linkFreetype(b: *Builder, step: *std.build.LibExeObjStep, options: FreetypeOptions) void {
-    const ft_lib = buildFreetype(b, step.build_mode, step.target, options);
+pub fn linkFreetype(b: *Build, step: *std.build.CompileStep, options: FreetypeOptions) void {
+    const ft_lib = buildFreetype(b, step.optimize, step.target, options);
     step.linkLibrary(ft_lib);
-    step.addIncludePath(sdkPath(b, ft_include_path));
+    step.addIncludePath(ft_include_path);
     if (options.brotli) {
-        const brotli_lib = buildBrotli(b, step.build_mode, step.target);
+        const brotli_lib = buildBrotli(b, step.optimize, step.target);
         if (options.install_libs)
             brotli_lib.install();
         step.linkLibrary(brotli_lib);
     }
 }
 
-pub fn linkHarfbuzz(b: *Builder, step: *std.build.LibExeObjStep, options: HarfbuzzOptions) void {
-    const hb_lib = buildHarfbuzz(b, step.build_mode, step.target, options);
+pub fn linkHarfbuzz(b: *Build, step: *std.build.CompileStep, options: HarfbuzzOptions) void {
+    const hb_lib = buildHarfbuzz(b, step.optimize, step.target, options);
     step.linkLibrary(hb_lib);
-    step.addIncludePath(sdkPath(b, hb_include_path));
+    step.addIncludePath(hb_include_path);
 }
 
-pub fn buildFreetype(b: *Builder, mode: std.builtin.Mode, target: std.zig.CrossTarget, options: FreetypeOptions) *std.build.LibExeObjStep {
+pub fn buildFreetype(b: *Build, optimize: std.builtin.OptimizeMode, target: std.zig.CrossTarget, options: FreetypeOptions) *std.build.CompileStep {
     // TODO(build-system): https://github.com/hexops/mach/issues/229#issuecomment-1100958939
     ensureDependencySubmodule(b.allocator, "upstream") catch unreachable;
 
-    const lib = b.addStaticLibrary("freetype", null);
+    const lib = b.addStaticLibrary(.{
+        .name = "freetype",
+        .target = target,
+        .optimize = optimize,
+    });
     lib.defineCMacro("FT2_BUILD_LIBRARY", "1");
     if (options.use_system_zlib) {
         lib.defineCMacro("FT_CONFIG_OPTION_SYSTEM_ZLIB", "1");
     }
-    lib.setBuildMode(mode);
-    lib.setTarget(target);
     lib.linkLibC();
-    lib.addIncludePath(sdkPath(b, ft_include_path));
+    lib.addIncludePath(ft_include_path);
 
     if (options.config_path) |path|
         lib.addIncludePath(path);
@@ -169,37 +165,36 @@ pub fn buildFreetype(b: *Builder, mode: std.builtin.Mode, target: std.zig.CrossT
     const target_info = (std.zig.system.NativeTargetInfo.detect(target) catch unreachable).target;
 
     if (target_info.os.tag == .windows) {
-        lib.addCSourceFile(sdkPath(b, ft_root ++ "/builds/windows/ftsystem.c"), &.{});
-        lib.addCSourceFile(sdkPath(b, ft_root ++ "/builds/windows/ftdebug.c"), &.{});
+        lib.addCSourceFile(ft_root ++ "/builds/windows/ftsystem.c", &.{});
+        lib.addCSourceFile(ft_root ++ "/builds/windows/ftdebug.c", &.{});
     } else {
-        lib.addCSourceFile(sdkPath(b, ft_root ++ "/src/base/ftsystem.c"), &.{});
-        lib.addCSourceFile(sdkPath(b, ft_root ++ "/src/base/ftdebug.c"), &.{});
+        lib.addCSourceFile(ft_root ++ "/src/base/ftsystem.c", &.{});
+        lib.addCSourceFile(ft_root ++ "/src/base/ftdebug.c", &.{});
     }
     if (target_info.os.tag.isBSD() or target_info.os.tag == .linux) {
         lib.defineCMacro("HAVE_UNISTD_H", "1");
         lib.defineCMacro("HAVE_FCNTL_H", "1");
-        lib.addCSourceFile(sdkPath(b, ft_root ++ "/builds/unix/ftsystem.c"), &.{});
+        lib.addCSourceFile(ft_root ++ "/builds/unix/ftsystem.c", &.{});
         if (target_info.os.tag == .macos)
-            lib.addCSourceFile(sdkPath(b, ft_root ++ "/src/base/ftmac.c"), &.{});
+            lib.addCSourceFile(ft_root ++ "/src/base/ftmac.c", &.{});
     }
-
-    inline for (freetype_base_sources) |ft_source| {
-        lib.addCSourceFile(sdkPath(b, ft_source), &.{});
-    }
+    lib.addCSourceFiles(freetype_base_sources, &.{});
 
     if (options.install_libs)
         lib.install();
     return lib;
 }
 
-pub fn buildHarfbuzz(b: *Builder, mode: std.builtin.Mode, target: std.zig.CrossTarget, options: HarfbuzzOptions) *std.build.LibExeObjStep {
-    const main_abs = sdkPath(b, hb_root ++ "/src/harfbuzz.cc");
-    const lib = b.addStaticLibrary("harfbuzz", main_abs);
-    lib.setBuildMode(mode);
-    lib.setTarget(target);
+pub fn buildHarfbuzz(b: *Build, optimize: std.builtin.OptimizeMode, target: std.zig.CrossTarget, options: HarfbuzzOptions) *std.build.CompileStep {
+    const lib = b.addStaticLibrary(.{
+        .name = "harfbuzz",
+        .root_source_file = .{ .path = hb_root ++ "/src/harfbuzz.cc" },
+        .target = target,
+        .optimize = optimize,
+    });
     lib.linkLibCpp();
-    lib.addIncludePath(sdkPath(b, hb_include_path));
-    lib.addIncludePath(sdkPath(b, ft_include_path));
+    lib.addIncludePath(hb_include_path);
+    lib.addIncludePath(ft_include_path);
     lib.defineCMacro("HAVE_FREETYPE", "1");
 
     if (options.install_libs)
@@ -207,17 +202,15 @@ pub fn buildHarfbuzz(b: *Builder, mode: std.builtin.Mode, target: std.zig.CrossT
     return lib;
 }
 
-fn buildBrotli(b: *Builder, mode: std.builtin.Mode, target: std.zig.CrossTarget) *std.build.LibExeObjStep {
-    const lib = b.addStaticLibrary("brotli", null);
-    lib.setBuildMode(mode);
-    lib.setTarget(target);
+fn buildBrotli(b: *Build, optimize: std.builtin.OptimizeMode, target: std.zig.CrossTarget) *std.build.CompileStep {
+    const lib = b.addStaticLibrary(.{
+        .name = "brotli",
+        .target = target,
+        .optimize = optimize,
+    });
     lib.linkLibC();
-    lib.addIncludePath(sdkPath(b, brotli_root ++ "/include"));
-
-    inline for (brotli_base_sources) |brotli_source| {
-        lib.addCSourceFile(sdkPath(b, brotli_source), &.{});
-    }
-
+    lib.addIncludePath(brotli_root ++ "/include");
+    lib.addCSourceFiles(brotli_base_sources, &.{});
     return lib;
 }
 
@@ -227,59 +220,19 @@ fn ensureDependencySubmodule(allocator: std.mem.Allocator, path: []const u8) !vo
         if (std.mem.eql(u8, no_ensure_submodules, "true")) return;
     } else |_| {}
     var child = std.ChildProcess.init(&.{ "git", "submodule", "update", "--init", path }, allocator);
-    child.cwd = sdkPathAllocator(allocator, "/");
+    child.cwd = sdkPath("/");
     child.stderr = std.io.getStdErr();
     child.stdout = std.io.getStdOut();
 
     _ = try child.spawnAndWait();
 }
 
-const unresolved_dir = (struct {
-    inline fn unresolvedDir() []const u8 {
-        return comptime std.fs.path.dirname(@src().file) orelse ".";
-    }
-}).unresolvedDir();
-
-fn thisDir(allocator: std.mem.Allocator) []const u8 {
-    if (comptime unresolved_dir[0] == '/') {
-        return unresolved_dir;
-    }
-
-    const cached_dir = &(struct {
-        var cached_dir: ?[]const u8 = null;
-    }).cached_dir;
-
-    if (cached_dir.* == null) {
-        cached_dir.* = std.fs.cwd().realpathAlloc(allocator, unresolved_dir) catch unreachable;
-    }
-
-    return cached_dir.*.?;
-}
-
-inline fn sdkPath(b: *Builder, comptime suffix: []const u8) []const u8 {
-    return sdkPathAllocator(b.allocator, suffix);
-}
-
-inline fn sdkPathAllocator(allocator: std.mem.Allocator, comptime suffix: []const u8) []const u8 {
-    return sdkPathInternal(allocator, suffix.len, suffix[0..suffix.len].*);
-}
-
-fn sdkPathInternal(allocator: std.mem.Allocator, comptime len: usize, comptime suffix: [len]u8) []const u8 {
+fn sdkPath(comptime suffix: []const u8) []const u8 {
     if (suffix[0] != '/') @compileError("suffix must be an absolute path");
-
-    if (comptime unresolved_dir[0] == '/') {
-        return unresolved_dir ++ @as([]const u8, &suffix);
-    }
-
-    const cached_dir = &(struct {
-        var cached_dir: ?[]const u8 = null;
-    }).cached_dir;
-
-    if (cached_dir.* == null) {
-        cached_dir.* = std.fs.path.resolve(allocator, &.{ thisDir(allocator), suffix[1..] }) catch unreachable;
-    }
-
-    return cached_dir.*.?;
+    return comptime blk: {
+        const root_dir = std.fs.path.dirname(@src().file) orelse ".";
+        break :blk root_dir ++ suffix;
+    };
 }
 
 const freetype_base_sources = &[_][]const u8{

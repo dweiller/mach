@@ -41,7 +41,7 @@ Mach has many libraries you can use for game development in Zig - **you don't ha
 
 ## Join the community
 
-- [#hexops:matrix.org Matrix chat](https://matrix.to/#/#hexops:matrix.org) and [Discord server](https://discord.gg/XNG3NZgCqp), come discuss the future of game engines & graphics in Zig!
+- [Mach Discord server](https://discord.gg/XNG3NZgCqp) - come discuss the future of game engines & graphics in Zig!
 - [machengine.org](https://machengine.org)
 - Follow [@machengine on Twitter](https://twitter.com/machengine) for updates.
 
@@ -78,12 +78,12 @@ Mach is still early stages, so far we have support for building from the followi
 
 Mach works with the new self-hosted Zig compiler only. This means you'll need to use the latest Zig nightly version.
 
-Currently we test using `0.11.0-dev.1023+1c711b0a6`. Newer is generally better, but you can download this version here:
+Currently we test using `0.11.0-dev.1605+abc9530a8`. Newer is generally better, but you can download this version here:
 
-- **linux-x86_64**: https://ziglang.org/builds/zig-linux-x86_64-0.11.0-dev.1023+1c711b0a6.tar.xz)
-- **windows-x86_64**: https://ziglang.org/builds/zig-windows-x86_64-0.11.0-dev.1023+1c711b0a6.zip
-- **macos-x86_64** (Intel): https://ziglang.org/builds/zig-macos-x86_64-0.11.0-dev.1023+1c711b0a6.tar.xz
-- **macos-aarch64** (Apple Silicon): https://ziglang.org/builds/zig-macos-aarch64-0.11.0-dev.1023+1c711b0a6.tar.xz
+- **linux-x86_64**: https://ziglang.org/builds/zig-linux-x86_64-0.11.0-dev.1605+abc9530a8.tar.xz)
+- **windows-x86_64**: https://ziglang.org/builds/zig-windows-x86_64-0.11.0-dev.1605+abc9530a8.zip
+- **macos-x86_64** (Intel): https://ziglang.org/builds/zig-macos-x86_64-0.11.0-dev.1605+abc9530a8.tar.xz
+- **macos-aarch64** (Apple Silicon): https://ziglang.org/builds/zig-macos-aarch64-0.11.0-dev.1605+abc9530a8.tar.xz
 
 ## Contributing
 

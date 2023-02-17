@@ -2,8 +2,6 @@ const std = @import("std");
 
 const c = @import("c.zig").c;
 const Window = @import("Window.zig");
-const Error = @import("errors.zig").Error;
-const getError = @import("errors.zig").getError;
 
 const internal_debug = @import("internal_debug.zig");
 
@@ -21,24 +19,19 @@ const internal_debug = @import("internal_debug.zig");
 /// by setting the glfw.context_release_behavior hint.
 ///
 /// The specified window must have an OpenGL or OpenGL ES context. Specifying a window without a
-/// context will generate Error.NoWindowContext.
+/// context will generate glfw.ErrorCode.NoWindowContext.
 ///
 /// @param[in] window The window whose context to make current, or null to
 /// detach the current context.
 ///
-/// Possible errors include glfw.Error.NotInitialized, glfw.Error.NoWindowContext and glfw.Error.PlatformError.
+/// Possible errors include glfw.ErrorCode.NoWindowContext and glfw.ErrorCode.PlatformError.
 ///
 /// @thread_safety This function may be called from any thread.
 ///
 /// see also: context_current, glfwGetCurrentContext
-pub inline fn makeContextCurrent(window: ?Window) error{ NoWindowContext, PlatformError }!void {
+pub inline fn makeContextCurrent(window: ?Window) void {
     internal_debug.assertInitialized();
     if (window) |w| c.glfwMakeContextCurrent(w.handle) else c.glfwMakeContextCurrent(null);
-    getError() catch |err| return switch (err) {
-        Error.NotInitialized => unreachable,
-        Error.NoWindowContext, Error.PlatformError => |e| e,
-        else => unreachable,
-    };
 }
 
 /// Returns the window whose context is current on the calling thread.
@@ -48,18 +41,12 @@ pub inline fn makeContextCurrent(window: ?Window) error{ NoWindowContext, Platfo
 ///
 /// Returns he window whose context is current, or null if no window's context is current.
 ///
-/// Possible errors include glfw.Error.NotInitialized.
-///
 /// @thread_safety This function may be called from any thread.
 ///
 /// see also: context_current, glfwMakeContextCurrent
 pub inline fn getCurrentContext() ?Window {
     internal_debug.assertInitialized();
     if (c.glfwGetCurrentContext()) |handle| return Window.from(handle);
-    getError() catch |err| return switch (err) {
-        Error.NotInitialized => unreachable,
-        else => unreachable,
-    };
     return null;
 }
 
@@ -75,7 +62,7 @@ pub inline fn getCurrentContext() ?Window {
 /// even if a frame arrives a little bit late. You can check for these extensions with glfw.extensionSupported.
 ///
 /// A context must be current on the calling thread. Calling this function without a current context
-/// will cause Error.NoCurrentContext.
+/// will cause glfw.ErrorCode.NoCurrentContext.
 ///
 /// This function does not apply to Vulkan. If you are rendering with Vulkan, see the present mode
 /// of your swapchain instead.
@@ -83,7 +70,7 @@ pub inline fn getCurrentContext() ?Window {
 /// @param[in] interval The minimum number of screen updates to wait for until the buffers are
 /// swapped by glfw.swapBuffers.
 ///
-/// Possible errors include glfw.Error.NotInitialized, glfw.Error.NoCurrentContext and glfw.Error.PlatformError.
+/// Possible errors include glfw.ErrorCode.NoCurrentContext and glfw.ErrorCode.PlatformError.
 ///
 /// This function is not called during context creation, leaving the swap interval set to whatever
 /// is the default for that API. This is done because some swap interval extensions used by
@@ -96,14 +83,9 @@ pub inline fn getCurrentContext() ?Window {
 /// @thread_safety This function may be called from any thread.
 ///
 /// see also: buffer_swap, glfwSwapBuffers
-pub inline fn swapInterval(interval: i32) error{ NoCurrentContext, PlatformError }!void {
+pub inline fn swapInterval(interval: i32) void {
     internal_debug.assertInitialized();
     c.glfwSwapInterval(@intCast(c_int, interval));
-    getError() catch |err| return switch (err) {
-        Error.NotInitialized => unreachable,
-        Error.NoCurrentContext, Error.PlatformError => |e| e,
-        else => unreachable,
-    };
 }
 
 /// Returns whether the specified extension is available.
@@ -113,7 +95,7 @@ pub inline fn swapInterval(interval: i32) error{ NoCurrentContext, PlatformError
 /// creation API extensions.
 ///
 /// A context must be current on the calling thread. Calling this function without a current
-/// context will cause Error.NoCurrentContext.
+/// context will cause glfw.ErrorCode.NoCurrentContext.
 ///
 /// As this functions retrieves and searches one or more extension strings each call, it is
 /// recommended that you cache its results if it is going to be used frequently. The extension
@@ -125,26 +107,19 @@ pub inline fn swapInterval(interval: i32) error{ NoCurrentContext, PlatformError
 /// @param[in] extension The ASCII encoded name of the extension.
 /// @return `true` if the extension is available, or `false` otherwise.
 ///
-/// Possible errors include glfw.Error.NotInitialized, glfw.Error.NoCurrentContext, glfw.Error.InvalidValue
-/// and glfw.Error.PlatformError.
+/// Possible errors include glfw.ErrorCode.NoCurrentContext, glfw.ErrorCode.InvalidValue
+/// and glfw.ErrorCode.PlatformError.
 ///
 /// @thread_safety This function may be called from any thread.
 ///
 /// see also: context_glext, glfw.getProcAddress
-pub inline fn extensionSupported(extension: [:0]const u8) error{ NoCurrentContext, PlatformError }!bool {
+pub inline fn extensionSupported(extension: [:0]const u8) bool {
     internal_debug.assertInitialized();
 
     std.debug.assert(extension.len != 0);
     std.debug.assert(extension[0] != 0);
 
-    const supported = c.glfwExtensionSupported(extension.ptr);
-    getError() catch |err| return switch (err) {
-        Error.NoCurrentContext, Error.PlatformError => |e| e,
-        Error.NotInitialized => unreachable,
-        Error.InvalidValue => unreachable,
-        else => unreachable,
-    };
-    return supported == c.GLFW_TRUE;
+    return c.glfwExtensionSupported(extension.ptr) == c.GLFW_TRUE;
 }
 
 const builtin = @import("builtin");
@@ -161,7 +136,7 @@ pub const GLProc = *const fn () callconv(.C) void;
 /// function (see context_glext), if it is supported by the current context.
 ///
 /// A context must be current on the calling thread. Calling this function without a current
-/// context will cause Error.NoCurrentContext.
+/// context will cause glfw.ErrorCode.NoCurrentContext.
 ///
 /// This function does not apply to Vulkan. If you are rendering with Vulkan, see glfw.getInstanceProcAddress,
 /// `vkGetInstanceProcAddr` and `vkGetDeviceProcAddr` instead.
@@ -171,8 +146,8 @@ pub const GLProc = *const fn () callconv(.C) void;
 ///
 /// To maintain ABI compatability with the C glfwGetProcAddress, as it is commonly passed into
 /// libraries expecting that exact ABI, this function does not return an error. Instead, if
-/// glfw.Error.NotInitialized, glfw.Error.NoCurrentContext, or glfw.Error.PlatformError would
-/// occur this function will panic. You should ensure a valid OpenGL context exists and the
+/// glfw.ErrorCode.NotInitialized, glfw.ErrorCode.NoCurrentContext, or glfw.ErrorCode.PlatformError
+/// would occur this function will panic. You should ensure a valid OpenGL context exists and the
 /// GLFW is initialized before calling this function.
 ///
 /// The address of a given function is not guaranteed to be the same between contexts.
@@ -189,29 +164,34 @@ pub const GLProc = *const fn () callconv(.C) void;
 pub fn getProcAddress(proc_name: [*:0]const u8) callconv(.C) ?GLProc {
     internal_debug.assertInitialized();
     if (c.glfwGetProcAddress(proc_name)) |proc_address| return proc_address;
-    getError() catch |err| @panic(@errorName(err));
     return null;
 }
 
 test "makeContextCurrent" {
     const glfw = @import("main.zig");
-    try glfw.init(.{});
+    defer glfw.clearError(); // clear any error we generate
+    if (!glfw.init(.{})) {
+        std.log.err("failed to initialize GLFW: {?s}", .{glfw.getErrorString()});
+        std.process.exit(1);
+    }
     defer glfw.terminate();
 
-    const window = Window.create(640, 480, "Hello, Zig!", null, null, .{}) catch |err| {
-        // return without fail, because most of our CI environments are headless / we cannot open
-        // windows on them.
-        std.debug.print("note: failed to create window: {}\n", .{err});
-        return;
+    const window = Window.create(640, 480, "Hello, Zig!", null, null, .{}) orelse {
+        std.log.warn("failed to create window: {?s}", .{glfw.getErrorString()});
+        return error.SkipZigTest; // note: we don't exit(1) here because our CI can't open windows
     };
     defer window.destroy();
 
-    try glfw.makeContextCurrent(window);
+    glfw.makeContextCurrent(window);
 }
 
 test "getCurrentContext" {
     const glfw = @import("main.zig");
-    try glfw.init(.{});
+    defer glfw.clearError(); // clear any error we generate
+    if (!glfw.init(.{})) {
+        std.log.err("failed to initialize GLFW: {?s}", .{glfw.getErrorString()});
+        std.process.exit(1);
+    }
     defer glfw.terminate();
 
     const current_context = glfw.getCurrentContext();
@@ -220,51 +200,57 @@ test "getCurrentContext" {
 
 test "swapInterval" {
     const glfw = @import("main.zig");
-    try glfw.init(.{});
+    defer glfw.clearError(); // clear any error we generate
+    if (!glfw.init(.{})) {
+        std.log.err("failed to initialize GLFW: {?s}", .{glfw.getErrorString()});
+        std.process.exit(1);
+    }
     defer glfw.terminate();
 
-    const window = Window.create(640, 480, "Hello, Zig!", null, null, .{}) catch |err| {
-        // return without fail, because most of our CI environments are headless / we cannot open
-        // windows on them.
-        std.debug.print("note: failed to create window: {}\n", .{err});
-        return;
+    const window = Window.create(640, 480, "Hello, Zig!", null, null, .{}) orelse {
+        std.log.warn("failed to create window: {?s}", .{glfw.getErrorString()});
+        return error.SkipZigTest; // note: we don't exit(1) here because our CI can't open windows
     };
     defer window.destroy();
 
-    try glfw.makeContextCurrent(window);
-    glfw.swapInterval(1) catch |err| std.debug.print("failed to set swap interval, error={}\n", .{err});
+    glfw.makeContextCurrent(window);
+    glfw.swapInterval(1);
 }
 
 test "getProcAddress" {
     const glfw = @import("main.zig");
-    try glfw.init(.{});
+    defer glfw.clearError(); // clear any error we generate
+    if (!glfw.init(.{})) {
+        std.log.err("failed to initialize GLFW: {?s}", .{glfw.getErrorString()});
+        std.process.exit(1);
+    }
     defer glfw.terminate();
 
-    const window = Window.create(640, 480, "Hello, Zig!", null, null, .{}) catch |err| {
-        // return without fail, because most of our CI environments are headless / we cannot open
-        // windows on them.
-        std.debug.print("note: failed to create window: {}\n", .{err});
-        return;
+    const window = Window.create(640, 480, "Hello, Zig!", null, null, .{}) orelse {
+        std.log.warn("failed to create window: {?s}", .{glfw.getErrorString()});
+        return error.SkipZigTest; // note: we don't exit(1) here because our CI can't open windows
     };
     defer window.destroy();
 
-    try glfw.makeContextCurrent(window);
+    glfw.makeContextCurrent(window);
     _ = glfw.getProcAddress("foobar");
 }
 
 test "extensionSupported" {
     const glfw = @import("main.zig");
-    try glfw.init(.{});
+    defer glfw.clearError(); // clear any error we generate
+    if (!glfw.init(.{})) {
+        std.log.err("failed to initialize GLFW: {?s}", .{glfw.getErrorString()});
+        std.process.exit(1);
+    }
     defer glfw.terminate();
 
-    const window = Window.create(640, 480, "Hello, Zig!", null, null, .{}) catch |err| {
-        // return without fail, because most of our CI environments are headless / we cannot open
-        // windows on them.
-        std.debug.print("note: failed to create window: {}\n", .{err});
-        return;
+    const window = Window.create(640, 480, "Hello, Zig!", null, null, .{}) orelse {
+        std.log.warn("failed to create window: {?s}", .{glfw.getErrorString()});
+        return error.SkipZigTest; // note: we don't exit(1) here because our CI can't open windows
     };
     defer window.destroy();
 
-    try glfw.makeContextCurrent(window);
-    _ = glfw.extensionSupported("foobar") catch |err| std.debug.print("failed to check if extension supported, error={}\n", .{err});
+    glfw.makeContextCurrent(window);
+    _ = glfw.extensionSupported("foobar");
 }

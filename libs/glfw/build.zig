@@ -1,40 +1,45 @@
 const builtin = @import("builtin");
 const std = @import("std");
-const Builder = std.build.Builder;
+const Build = std.Build;
 
 const system_sdk = @import("system_sdk.zig");
 
-pub fn build(b: *Builder) !void {
-    const mode = b.standardReleaseOptions();
+pub fn build(b: *Build) !void {
+    const optimize = b.standardOptimizeOption(.{});
     const target = b.standardTargetOptions(.{});
 
     const test_step = b.step("test", "Run library tests");
-    test_step.dependOn(&(try testStep(b, mode, target)).step);
-    test_step.dependOn(&(try testStepShared(b, mode, target)).step);
+    test_step.dependOn(&(try testStep(b, optimize, target)).step);
+    test_step.dependOn(&(try testStepShared(b, optimize, target)).step);
 }
 
-pub fn testStep(b: *Builder, mode: std.builtin.Mode, target: std.zig.CrossTarget) !*std.build.RunStep {
-    const main_tests = b.addTestExe("glfw-tests", sdkPath(b, "/src/main.zig"));
-    main_tests.setBuildMode(mode);
-    main_tests.setTarget(target);
+pub fn testStep(b: *Build, optimize: std.builtin.OptimizeMode, target: std.zig.CrossTarget) !*std.build.RunStep {
+    const main_tests = b.addTest(.{
+        .name = "glfw-tests",
+        .kind = .test_exe,
+        .root_source_file = .{ .path = sdkPath("/src/main.zig") },
+        .target = target,
+        .optimize = optimize,
+    });
+
     try link(b, main_tests, .{});
     main_tests.install();
     return main_tests.run();
 }
 
-fn testStepShared(b: *Builder, mode: std.builtin.Mode, target: std.zig.CrossTarget) !*std.build.RunStep {
-    const main_tests = b.addTestExe("glfw-tests-shared", sdkPath(b, "/src/main.zig"));
-    main_tests.setBuildMode(mode);
-    main_tests.setTarget(target);
+fn testStepShared(b: *Build, optimize: std.builtin.OptimizeMode, target: std.zig.CrossTarget) !*std.build.RunStep {
+    const main_tests = b.addTest(.{
+        .name = "glfw-tests-shared",
+        .kind = .test_exe,
+        .root_source_file = .{ .path = sdkPath("/src/main.zig") },
+        .target = target,
+        .optimize = optimize,
+    });
+
     try link(b, main_tests, .{ .shared = true });
     main_tests.install();
     return main_tests.run();
 }
-
-pub const LinuxWindowManager = enum {
-    X11,
-    Wayland,
-};
 
 pub const Options = struct {
     /// Not supported on macOS.
@@ -64,23 +69,15 @@ pub const Options = struct {
     install_libs: bool = false,
 };
 
-var cached_pkg: ?std.build.Pkg = null;
-
-pub fn pkg(b: *Builder) std.build.Pkg {
-    if (cached_pkg == null) {
-        cached_pkg = .{
-            .name = "glfw",
-            .source = .{ .path = sdkPath(b, "/src/main.zig") },
-            .dependencies = &.{},
-        };
-    }
-
-    return cached_pkg.?;
+pub fn module(b: *std.Build) *std.build.Module {
+    return b.createModule(.{
+        .source_file = .{ .path = sdkPath("/src/main.zig") },
+    });
 }
 
 pub const LinkError = error{FailedToLinkGPU} || BuildError;
-pub fn link(b: *Builder, step: *std.build.LibExeObjStep, options: Options) LinkError!void {
-    const lib = try buildLibrary(b, step.build_mode, step.target, options);
+pub fn link(b: *Build, step: *std.build.CompileStep, options: Options) LinkError!void {
+    const lib = try buildLibrary(b, step.optimize, step.target, options);
     step.linkLibrary(lib);
     addGLFWIncludes(step);
     if (options.shared) {
@@ -92,16 +89,14 @@ pub fn link(b: *Builder, step: *std.build.LibExeObjStep, options: Options) LinkE
 }
 
 pub const BuildError = error{CannotEnsureDependency} || std.mem.Allocator.Error;
-fn buildLibrary(b: *Builder, mode: std.builtin.Mode, target: std.zig.CrossTarget, options: Options) BuildError!*std.build.LibExeObjStep {
+fn buildLibrary(b: *Build, optimize: std.builtin.OptimizeMode, target: std.zig.CrossTarget, options: Options) BuildError!*std.build.CompileStep {
     // TODO(build-system): https://github.com/hexops/mach/issues/229#issuecomment-1100958939
     ensureDependencySubmodule(b.allocator, "upstream") catch return error.CannotEnsureDependency;
 
     const lib = if (options.shared)
-        b.addSharedLibrary("glfw", null, .unversioned)
+        b.addSharedLibrary(.{ .name = "glfw", .target = target, .optimize = optimize })
     else
-        b.addStaticLibrary("glfw", null);
-    lib.setBuildMode(mode);
-    lib.setTarget(target);
+        b.addStaticLibrary(.{ .name = "glfw", .target = target, .optimize = optimize });
 
     if (options.shared)
         lib.defineCMacro("_GLFW_BUILD_DLL", null);
@@ -116,22 +111,22 @@ fn buildLibrary(b: *Builder, mode: std.builtin.Mode, target: std.zig.CrossTarget
     return lib;
 }
 
-fn addGLFWIncludes(step: *std.build.LibExeObjStep) void {
-    step.addIncludePath(sdkPath(step.builder, "/upstream/glfw/include"));
-    step.addIncludePath(sdkPath(step.builder, "/upstream/vulkan_headers/include"));
+fn addGLFWIncludes(step: *std.build.CompileStep) void {
+    step.addIncludePath(sdkPath("/upstream/glfw/include"));
+    step.addIncludePath(sdkPath("/upstream/vulkan_headers/include"));
 }
 
-fn addGLFWSources(b: *Builder, lib: *std.build.LibExeObjStep, options: Options) std.mem.Allocator.Error!void {
-    const include_glfw_src = try std.mem.concat(b.allocator, u8, &.{ "-I", sdkPath(b, "/upstream/glfw/src") });
+fn addGLFWSources(b: *Build, lib: *std.build.CompileStep, options: Options) std.mem.Allocator.Error!void {
+    const include_glfw_src = comptime "-I" ++ sdkPath("/upstream/glfw/src");
     switch (lib.target_info.target.os.tag) {
         .windows => lib.addCSourceFiles(&.{
-            sdkPath(b, "/src/sources_all.c"),
-            sdkPath(b, "/src/sources_windows.c"),
+            sdkPath("/src/sources_all.c"),
+            sdkPath("/src/sources_windows.c"),
         }, &.{ "-D_GLFW_WIN32", include_glfw_src }),
         .macos => lib.addCSourceFiles(&.{
-            sdkPath(b, "/src/sources_all.c"),
-            sdkPath(b, "/src/sources_macos.m"),
-            sdkPath(b, "/src/sources_macos.c"),
+            sdkPath("/src/sources_all.c"),
+            sdkPath("/src/sources_macos.m"),
+            sdkPath("/src/sources_macos.c"),
         }, &.{ "-D_GLFW_COCOA", include_glfw_src }),
         else => {
             // TODO(future): for now, Linux can't be built with musl:
@@ -142,17 +137,17 @@ fn addGLFWSources(b: *Builder, lib: *std.build.LibExeObjStep, options: Options) 
             // ```
             var sources = std.ArrayList([]const u8).init(b.allocator);
             var flags = std.ArrayList([]const u8).init(b.allocator);
-            try sources.append(sdkPath(b, "/src/sources_all.c"));
-            try sources.append(sdkPath(b, "/src/sources_linux.c"));
+            try sources.append(sdkPath("/src/sources_all.c"));
+            try sources.append(sdkPath("/src/sources_linux.c"));
             if (options.x11) {
-                try sources.append(sdkPath(b, "/src/sources_linux_x11.c"));
+                try sources.append(sdkPath("/src/sources_linux_x11.c"));
                 try flags.append("-D_GLFW_X11");
             }
             if (options.wayland) {
-                try sources.append(sdkPath(b, "/src/sources_linux_wayland.c"));
+                try sources.append(sdkPath("/src/sources_linux_wayland.c"));
                 try flags.append("-D_GLFW_WAYLAND");
             }
-            try flags.append(include_glfw_src);
+            try flags.append(comptime "-I" ++ sdkPath("/upstream/glfw/src"));
             // TODO(upstream): glfw can't compile on clang15 without this flag
             try flags.append("-Wno-implicit-function-declaration");
 
@@ -161,7 +156,7 @@ fn addGLFWSources(b: *Builder, lib: *std.build.LibExeObjStep, options: Options) 
     }
 }
 
-fn linkGLFWDependencies(b: *Builder, step: *std.build.LibExeObjStep, options: Options) void {
+fn linkGLFWDependencies(b: *Build, step: *std.build.CompileStep, options: Options) void {
     step.linkLibC();
     system_sdk.include(b, step, options.system_sdk);
     switch (step.target_info.target.os.tag) {
@@ -206,57 +201,17 @@ fn ensureDependencySubmodule(allocator: std.mem.Allocator, path: []const u8) !vo
         if (std.mem.eql(u8, no_ensure_submodules, "true")) return;
     } else |_| {}
     var child = std.ChildProcess.init(&.{ "git", "submodule", "update", "--init", path }, allocator);
-    child.cwd = sdkPathAllocator(allocator, "/");
+    child.cwd = sdkPath("/");
     child.stderr = std.io.getStdErr();
     child.stdout = std.io.getStdOut();
 
     _ = try child.spawnAndWait();
 }
 
-const unresolved_dir = (struct {
-    inline fn unresolvedDir() []const u8 {
-        return comptime std.fs.path.dirname(@src().file) orelse ".";
-    }
-}).unresolvedDir();
-
-fn thisDir(allocator: std.mem.Allocator) []const u8 {
-    if (comptime unresolved_dir[0] == '/') {
-        return unresolved_dir;
-    }
-
-    const cached_dir = &(struct {
-        var cached_dir: ?[]const u8 = null;
-    }).cached_dir;
-
-    if (cached_dir.* == null) {
-        cached_dir.* = std.fs.cwd().realpathAlloc(allocator, unresolved_dir) catch unreachable;
-    }
-
-    return cached_dir.*.?;
-}
-
-inline fn sdkPath(b: *Builder, comptime suffix: []const u8) []const u8 {
-    return sdkPathAllocator(b.allocator, suffix);
-}
-
-inline fn sdkPathAllocator(allocator: std.mem.Allocator, comptime suffix: []const u8) []const u8 {
-    return sdkPathInternal(allocator, suffix.len, suffix[0..suffix.len].*);
-}
-
-fn sdkPathInternal(allocator: std.mem.Allocator, comptime len: usize, comptime suffix: [len]u8) []const u8 {
+fn sdkPath(comptime suffix: []const u8) []const u8 {
     if (suffix[0] != '/') @compileError("suffix must be an absolute path");
-
-    if (comptime unresolved_dir[0] == '/') {
-        return unresolved_dir ++ @as([]const u8, &suffix);
-    }
-
-    const cached_dir = &(struct {
-        var cached_dir: ?[]const u8 = null;
-    }).cached_dir;
-
-    if (cached_dir.* == null) {
-        cached_dir.* = std.fs.path.resolve(allocator, &.{ thisDir(allocator), suffix[1..] }) catch unreachable;
-    }
-
-    return cached_dir.*.?;
+    return comptime blk: {
+        const root_dir = std.fs.path.dirname(@src().file) orelse ".";
+        break :blk root_dir ++ suffix;
+    };
 }
