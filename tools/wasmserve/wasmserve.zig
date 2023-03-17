@@ -27,20 +27,24 @@ pub const Options = struct {
 pub const Error = error{CannotOpenDirectory} || mem.Allocator.Error;
 
 pub fn serve(step: *build.CompileStep, options: Options) Error!*Wasmserve {
-    const self = try step.builder.allocator.create(Wasmserve);
+    const self = try step.step.owner.allocator.create(Wasmserve);
     const install_dir = options.install_dir orelse build.InstallDir{ .lib = {} };
-    const install_dir_iter = fs.cwd().makeOpenPathIterable(step.builder.getInstallPath(install_dir, ""), .{}) catch
+    const install_dir_iter = fs.cwd().makeOpenPathIterable(step.step.owner.getInstallPath(install_dir, ""), .{}) catch
         return error.CannotOpenDirectory;
     self.* = Wasmserve{
-        .step = build.Step.init(.run, "wasmserve", step.builder.allocator, Wasmserve.make),
-        .b = step.builder,
+        .step = build.Step.init(.{
+            .id = .run,
+            .name = "wasmserve",
+            .owner = step.step.owner,
+            .makeFn = Wasmserve.make,
+        }),
         .exe_step = step,
         .install_dir = install_dir,
         .install_dir_iter = install_dir_iter,
         .address = options.listen_address orelse net.Address.initIp4([4]u8{ 127, 0, 0, 1 }, 8080),
         .subscriber = null,
         .watch_paths = options.watch_paths orelse &.{step.root_src.?.path},
-        .mtimes = std.AutoHashMap(fs.File.INode, i128).init(step.builder.allocator),
+        .mtimes = std.AutoHashMap(fs.File.INode, i128).init(step.step.owner.allocator),
         .notify_msg = null,
     };
     return self;
@@ -48,7 +52,6 @@ pub fn serve(step: *build.CompileStep, options: Options) Error!*Wasmserve {
 
 const Wasmserve = struct {
     step: build.Step,
-    b: *build.Builder,
     exe_step: *build.CompileStep,
     install_dir: build.InstallDir,
     install_dir_iter: fs.IterableDir,
@@ -69,7 +72,7 @@ const Wasmserve = struct {
         data: []const u8,
     };
 
-    pub fn make(step: *build.Step) !void {
+    pub fn make(step: *build.Step, prog_node: *std.Progress.Node) !void {
         const self = @fieldParentPtr(Wasmserve, "step", step);
 
         self.compile();
@@ -79,14 +82,14 @@ const Wasmserve = struct {
         defer www_dir.close();
         var www_dir_iter = www_dir.iterate();
         while (try www_dir_iter.next()) |file| {
-            const path = try fs.path.join(self.b.allocator, &.{ www_dir_path, file.name });
-            defer self.b.allocator.free(path);
-            const install_www = self.b.addInstallFileWithDir(
+            const path = try fs.path.join(self.step.owner.allocator, &.{ www_dir_path, file.name });
+            defer self.step.owner.allocator.free(path);
+            const install_www = self.step.owner.addInstallFileWithDir(
                 .{ .path = path },
                 self.install_dir,
                 file.name,
             );
-            try install_www.step.make();
+            try install_www.step.make(prog_node);
         }
 
         const watch_thread = try std.Thread.spawn(.{}, watch, .{self});
@@ -135,7 +138,7 @@ const Wasmserve = struct {
             const url = dropFragment(uri)[1..];
             if (mem.eql(u8, url, "notify")) {
                 _ = try conn.stream.write("HTTP/1.1 200 OK\r\nConnection: Keep-Alive\r\nContent-Type: text/event-stream\r\nCache-Control: No-Cache\r\n\r\n");
-                self.subscriber = try self.b.allocator.create(net.StreamServer.Connection);
+                self.subscriber = try self.step.owner.allocator.create(net.StreamServer.Connection);
                 self.subscriber.?.* = conn;
                 if (self.notify_msg) |msg|
                     if (msg.event != .built)
@@ -190,12 +193,12 @@ const Wasmserve = struct {
     }
 
     fn researchPath(self: Wasmserve, path: []const u8) ![]const u8 {
-        var walker = try self.install_dir_iter.walk(self.b.allocator);
+        var walker = try self.install_dir_iter.walk(self.step.owner.allocator);
         defer walker.deinit();
         while (try walker.next()) |walk_entry| {
             if (walk_entry.kind != .File) continue;
             if (mem.eql(u8, walk_entry.path, path) or (path.len == 0 and mem.eql(u8, walk_entry.path, "index.html")))
-                return try self.b.allocator.dupe(u8, walk_entry.path);
+                return try self.step.owner.allocator.dupe(u8, walk_entry.path);
         }
         return error.FileNotFound;
     }
@@ -205,7 +208,7 @@ const Wasmserve = struct {
             for (self.watch_paths) |path| {
                 var dir = fs.cwd().openIterableDir(path, .{}) catch continue;
                 defer dir.close();
-                var walker = dir.walk(self.b.allocator) catch |err| {
+                var walker = dir.walk(self.step.owner.allocator) catch |err| {
                     logErr(err, @src());
                     continue;
                 };
@@ -259,15 +262,15 @@ const Wasmserve = struct {
             logErr(err, @src());
             return;
         };
-        defer self.b.allocator.free(argv);
-        var res = std.ChildProcess.exec(.{ .argv = argv, .allocator = self.b.allocator }) catch |err| {
+        defer self.step.owner.allocator.free(argv);
+        var res = std.ChildProcess.exec(.{ .argv = argv, .allocator = self.step.owner.allocator }) catch |err| {
             logErr(err, @src());
             return;
         };
-        defer self.b.allocator.free(res.stdout);
+        defer self.step.owner.allocator.free(res.stdout);
         if (self.notify_msg) |msg|
             if (msg.event == .build_error)
-                self.b.allocator.free(msg.data);
+                self.step.owner.allocator.free(msg.data);
 
         switch (res.term) {
             .Exited => |code| {
