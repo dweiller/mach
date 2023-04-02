@@ -2,8 +2,9 @@
 //!
 //! ## Design principles:
 //!
-//! * Clean-room implementation (author has not read any other ECS implementation code, just working
-//!   from first-principles)
+//! * Initially a 100% clean-room implementation, working from first-principles. Later informed by
+//!   research into how other ECS work, with advice from e.g. Bevy and Flecs authors at different
+//!   points (thank you!)
 //! * Solve the problems ECS solves, in a way that is natural to Zig and leverages Zig comptime.
 //! * Fast. Optimal for CPU caches, multi-threaded, leverage comptime as much as is reasonable.
 //! * Simple. Small API footprint, should be natural and fun - not like you're writing boilerplate.
@@ -36,33 +37,34 @@ test "inclusion" {
 test "example" {
     const allocator = testing.allocator;
 
-    const PhysicsMsg = Messages(.{
-        .tick = void,
-    });
-    const physicsUpdate = (struct {
-        pub fn physicsUpdate(msg: PhysicsMsg) void {
+    const Physics2D = Module(struct {
+        pointer: u8,
+
+        pub const name = .physics;
+        pub const components = .{
+            .id = u32,
+        };
+        pub const Message = .{
+            .tick = void,
+        };
+
+        pub fn update(msg: Message) void {
             switch (msg) {
                 .tick => std.debug.print("\nphysics tick!\n", .{}),
             }
         }
-    }).physicsUpdate;
+    });
+
+    const Renderer = Module(struct {
+        pub const name = .renderer;
+        pub const components = .{
+            .id = u16,
+        };
+    });
 
     const modules = Modules(.{
-        .physics = Module(.{
-            .components = .{
-                .id = u32,
-            },
-            .globals = struct {
-                pointer: u8,
-            },
-            .messages = PhysicsMsg,
-            .update = physicsUpdate,
-        }),
-        .renderer = Module(.{
-            .components = .{
-                .id = u16,
-            },
-        }),
+        Physics2D,
+        Renderer,
     });
 
     //-------------------------------------------------------------------------
@@ -70,18 +72,20 @@ test "example" {
     var world = try World(modules).init(allocator);
     defer world.deinit();
 
-    // Initialize globals.
-    world.set(.physics, .pointer, 123);
-    _ = world.get(.physics, .pointer); // == 123
+    // Initialize module state.
+    var physics = world.mod(.physics);
+    var renderer = world.mod(.renderer);
+    physics.initState(.{ .pointer = 123 });
+    _ = physics.state().pointer; // == 123
 
-    const player1 = try world.entities.new();
-    const player2 = try world.entities.new();
-    const player3 = try world.entities.new();
-    try world.entities.setComponent(player1, .physics, .id, 1234);
-    try world.entities.setComponent(player1, .renderer, .id, 1234);
+    const player1 = try world.newEntity();
+    const player2 = try world.newEntity();
+    const player3 = try world.newEntity();
+    try physics.set(player1, .id, 1234);
+    try renderer.set(player1, .id, 1234);
 
-    try world.entities.setComponent(player2, .physics, .id, 1234);
-    try world.entities.setComponent(player3, .physics, .id, 1234);
+    try physics.set(player2, .id, 1234);
+    try physics.set(player3, .id, 1234);
 
-    world.tick();
+    try world.send(.tick);
 }

@@ -3,12 +3,16 @@ const Build = std.Build;
 
 const basisu_root = sdkPath("/upstream/basisu");
 
+var _module: ?*std.build.Module = null;
+
 pub fn module(b: *std.Build) *std.build.Module {
-    return b.createModule(.{
+    if (_module) |m| return m;
+    _module = b.createModule(.{
         .source = .{
             .path = "src/main.zig",
         },
     });
+    return _module.?;
 }
 
 pub const Options = struct {
@@ -35,7 +39,6 @@ pub fn build(b: *Build) void {
 pub fn testStep(b: *Build, optimize: std.builtin.OptimizeMode, target: std.zig.CrossTarget) *std.build.RunStep {
     const main_tests = b.addTest(.{
         .name = "basisu-tests",
-        .kind = .test_exe,
         .root_source_file = .{ .path = sdkPath("/src/main.zig") },
         .target = target,
         .optimize = optimize,

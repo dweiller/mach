@@ -4,52 +4,68 @@ const gpu = @import("core").gpu;
 const std = @import("std");
 const ecs = @import("ecs");
 
-/// The Mach engine ECS module. This enables access to `engine.get(.mach, .core)` `*Core` APIs, as
-/// to for example `.setOptions(.{.title = "foobar"})`, or to access the GPU device via
-/// `engine.get(.mach, .device)`
-pub const module = ecs.Module(.{
-    .globals = struct {
-        core: *Core,
-        device: *gpu.Device,
-    },
-});
-
 var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = gpa.allocator();
 
-pub fn App(
-    comptime modules: anytype,
-    comptime app_init: anytype, // fn (engine: *ecs.World(modules)) !void
-) type {
-    // TODO: validate modules.mach is the expected type.
-    // TODO: validate init has the right function signature
+/// The main Mach engine ECS module.
+pub const Module = struct {
+    _core: Core,
+    core: *Core,
+    device: *gpu.Device,
+    exit: bool,
 
+    pub const name = .mach;
+
+    pub fn machInit(adapter: anytype) !void {
+        var mach = adapter.mod(.mach);
+
+        mach.initState(.{
+            ._core = undefined,
+            .core = undefined,
+            .device = undefined,
+            .exit = false,
+        });
+
+        var state = mach.state();
+        try state._core.init(allocator, .{});
+        state.core = &state._core;
+        state.device = state.core.device();
+        try adapter.send(.init);
+    }
+
+    pub fn machDeinit(adapter: anytype) !void {
+        try adapter.send(.deinit);
+
+        var state = adapter.mod(.mach).state();
+        state.core.deinit();
+        adapter.deinit();
+        _ = gpa.deinit();
+    }
+
+    pub fn machExit(adapter: anytype) !void {
+        try adapter.send(.exit);
+
+        var state = adapter.mod(.mach).state();
+        state.exit = true;
+    }
+};
+
+pub fn App(comptime modules: anytype) type {
     return struct {
         engine: ecs.World(modules),
-        core: Core,
 
         pub fn init(app: *@This()) !void {
-            try app.core.init(allocator, .{});
-            app.* = .{
-                .core = app.core,
-                .engine = try ecs.World(modules).init(allocator),
-            };
-            app.engine.set(.mach, .core, &app.core);
-            app.engine.set(.mach, .device, app.core.device());
-            try app_init(&app.engine);
+            app.* = .{ .engine = try ecs.World(modules).init(allocator) };
+            try app.engine.send(.machInit);
         }
 
         pub fn deinit(app: *@This()) void {
-            const core = app.engine.get(.mach, .core);
-            core.deinit();
-            allocator.destroy(core);
-            app.engine.deinit();
-            _ = gpa.deinit();
+            try app.engine.send(.machDeinit);
         }
 
         pub fn update(app: *@This()) !bool {
-            app.engine.tick();
-            return false;
+            try app.engine.send(.tick);
+            return app.engine.mod(.mach).state().exit;
         }
     };
 }

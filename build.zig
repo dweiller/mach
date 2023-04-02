@@ -11,7 +11,7 @@ const gamemode = @import("libs/gamemode/build.zig");
 const model3d = @import("libs/model3d/build.zig");
 const dusk = @import("libs/dusk/build.zig");
 const wasmserve = @import("tools/wasmserve/wasmserve.zig");
-const gpu_dawn = @import("libs/gpu-dawn/sdk.zig").Sdk(.{
+pub const gpu_dawn = @import("libs/gpu-dawn/sdk.zig").Sdk(.{
     .glfw_include_dir = sdkPath("/libs/glfw/upstream/glfw/include"),
     .system_sdk = system_sdk,
 });
@@ -31,8 +31,11 @@ const core = @import("libs/core/sdk.zig").Sdk(.{
     .sysjs = sysjs,
 });
 
+var _module: ?*std.build.Module = null;
+
 pub fn module(b: *std.Build) *std.build.Module {
-    return b.createModule(.{
+    if (_module) |m| return m;
+    _module = b.createModule(.{
         .source_file = .{ .path = sdkPath("/src/main.zig") },
         .dependencies = &.{
             .{ .name = "core", .module = core.module(b) },
@@ -41,6 +44,7 @@ pub fn module(b: *std.Build) *std.build.Module {
             .{ .name = "earcut", .module = earcut.module(b) },
         },
     });
+    return _module.?;
 }
 
 pub const Options = struct {
@@ -116,7 +120,6 @@ pub fn build(b: *std.Build) !void {
 fn testStep(b: *std.Build, optimize: std.builtin.OptimizeMode, target: std.zig.CrossTarget) *std.build.RunStep {
     const main_tests = b.addTest(.{
         .name = "mach-tests",
-        .kind = .test_exe,
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = optimize,

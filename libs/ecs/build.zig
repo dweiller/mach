@@ -1,9 +1,13 @@
 const std = @import("std");
 
+var _module: ?*std.build.Module = null;
+
 pub fn module(b: *std.Build) *std.build.Module {
-    return b.createModule(.{
+    if (_module) |m| return m;
+    _module = b.createModule(.{
         .source_file = .{ .path = sdkPath("/src/main.zig") },
     });
+    return _module.?;
 }
 
 pub fn build(b: *std.Build) void {
@@ -16,7 +20,6 @@ pub fn build(b: *std.Build) void {
 pub fn testStep(b: *std.Build, optimize: std.builtin.OptimizeMode, target: std.zig.CrossTarget) *std.build.RunStep {
     const main_tests = b.addTest(.{
         .name = "ecs-tests",
-        .kind = .test_exe,
         .root_source_file = .{ .path = sdkPath("/src/main.zig") },
         .target = target,
         .optimize = optimize,
